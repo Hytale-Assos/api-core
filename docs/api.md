@@ -1,53 +1,53 @@
-# API — référence des endpoints
+# API — endpoint reference
 
-Dernière mise à jour : 18 septembre 2026
+Last updated: 18 September 2026
 
-Base URL : `http://<host>:3000`. Corps en JSON (UTF-8).
+Base URL: `http://<host>:3000`. JSON body (UTF-8).
 
-## Authentification
+## Authentication
 
-Il n'existe qu'une seule logique d'authentification : **tout consommateur est un
-module** (plugin Hytale, site Laravel, bot Discord, backoffice). Deux modes
-selon la méthode HTTP :
+There is a single authentication model: **every consumer is a module** (Hytale
+plugin, Laravel site, Discord bot, backoffice). Two modes depending on the HTTP
+method:
 
-| Méthode | En-têtes requis |
+| Method | Required headers |
 |---|---|
 | `GET` | `X-Api-Key: <api_key>` |
-| `POST` / `DELETE` | `X-Api-Key`, `X-Timestamp` (Unix secondes), `X-Signature` |
+| `POST` / `DELETE` | `X-Api-Key`, `X-Timestamp` (Unix seconds), `X-Signature` |
 
-`X-Signature` = HMAC-SHA256 en hexadécimal de `"{X-Timestamp}.{corps brut}"`,
-calculé avec le `hmac_secret` du module. Tolérance d'horodatage :
-`HMAC_TOLERANCE_SECS` (défaut 300). Signatures et scopes : voir `docs/scopes.md`.
+`X-Signature` = hex HMAC-SHA256 of `"{X-Timestamp}.{raw body}"`, computed with
+the module's `hmac_secret`. Timestamp tolerance: `HMAC_TOLERANCE_SECS`
+(default 300). Signatures and scopes: see `docs/scopes.md`.
 
-> `GET /health` est public. Il n'y a plus d'endpoints admin protégés par un
-> token : le backoffice est un module disposant du scope `admin`.
+> `GET /health` is public. There are no more admin endpoints protected by a
+> token: the backoffice is a module holding the `admin` scope.
 
-## Format d'erreur
+## Error format
 
-Toute erreur renvoie un JSON :
+Every error returns JSON:
 
 ```json
-{ "error": "message lisible" }
+{ "error": "readable message" }
 ```
 
-| Statut | Signification |
+| Status | Meaning |
 |---|---|
-| 400 | corps/paramètre invalide |
-| 401 | authentification manquante, clé inconnue, signature invalide ou horodatage expiré |
-| 403 | module désactivé, scope manquant, ou ressource hors de son périmètre |
-| 404 | ressource introuvable |
-| 409 | conflit (nom déjà utilisé) |
-| 500 | erreur interne (détails jamais exposés) |
+| 400 | invalid body/parameter |
+| 401 | missing authentication, unknown key, invalid signature or expired timestamp |
+| 403 | disabled module, missing scope, or resource outside its scope |
+| 404 | resource not found |
+| 409 | conflict (name already used) |
+| 500 | internal error (details never exposed) |
 
-## Types partagés
+## Shared types
 
-**`Page<T>`** (réponses de liste) :
+**`Page<T>`** (list responses):
 
 ```json
 { "items": [], "total": 0, "limit": 50, "offset": 0 }
 ```
 
-**`HytaleServerView`** :
+**`HytaleServerView`**:
 
 ```json
 {
@@ -60,7 +60,7 @@ Toute erreur renvoie un JSON :
 }
 ```
 
-**`PlayerSessionView`** :
+**`PlayerSessionView`**:
 
 ```json
 {
@@ -74,7 +74,7 @@ Toute erreur renvoie un JSON :
 }
 ```
 
-**`WhitelistView`** :
+**`WhitelistView`**:
 
 ```json
 {
@@ -86,13 +86,13 @@ Toute erreur renvoie un JSON :
 }
 ```
 
-**`ModuleView`** :
+**`ModuleView`**:
 
 ```json
 {
   "id": "01a0a967-cb39-76c1-a30a-4983d3633604",
   "name": "plugin-hytale",
-  "description": "plugin de jeu",
+  "description": "game plugin",
   "is_enabled": true,
   "scopes": ["player_sessions:read", "player_sessions:write"],
   "created_at": "2026-09-16T08:49:06Z",
@@ -100,8 +100,8 @@ Toute erreur renvoie un JSON :
 }
 ```
 
-> `hytale_id` est toujours un **filtre de données**, jamais une identité :
-> l'autorisation reste portée par le module authentifié et ses scopes.
+> `hytale_id` is always a **data filter**, never an identity: authorization is
+> carried by the authenticated module and its scopes.
 
 ---
 
@@ -109,37 +109,37 @@ Toute erreur renvoie un JSON :
 
 ### GET /health
 
-Vérifie le service et la base.
+Checks the service and the database.
 
-- **Entrée** : aucune.
-- **Sortie 200** : `{ "status": "ok", "database": "up" }`
+- **Input**: none.
+- **Output 200**: `{ "status": "ok", "database": "up" }`
 
 ---
 
-## Modules — registre
+## Modules — registry
 
 ### POST /api/v1/modules
 
-Enregistre un module. Scope : `modules:write`. **L'`api_key` et le
-`hmac_secret` ne sont renvoyés qu'ici, en clair, une seule fois.**
+Registers a module. Scope: `modules:write`. **The `api_key` and `hmac_secret`
+are returned only here, in the clear, once.**
 
-- **Entrée** :
+- **Input**:
 
 ```json
 {
   "name": "plugin-hytale",
-  "description": "plugin de jeu",
+  "description": "game plugin",
   "scopes": ["player_sessions:read", "player_sessions:write"]
 }
 ```
 
-| Champ | Type | Requis |
+| Field | Type | Required |
 |---|---|---|
-| `name` | string | oui (unique) |
-| `description` | string \| null | non |
-| `scopes` | string[] | non (défaut `[]`) |
+| `name` | string | yes (unique) |
+| `description` | string \| null | no |
+| `scopes` | string[] | no (default `[]`) |
 
-- **Sortie 201** :
+- **Output 201**:
 
 ```json
 {
@@ -151,101 +151,100 @@ Enregistre un module. Scope : `modules:write`. **L'`api_key` et le
 }
 ```
 
-- **Erreurs** : 400 (`name` vide), 403 (scope manquant), 409 (nom déjà pris).
+- **Errors**: 400 (empty `name`), 403 (missing scope), 409 (name already taken).
 
 ### GET /api/v1/modules
 
-Liste les modules (sans secrets). Scope : `modules:read`.
+Lists modules (without secrets). Scope: `modules:read`.
 
-- **Sortie 200** : `ModuleView[]`.
+- **Output 200**: `ModuleView[]`.
 
 ### GET /api/v1/modules/{id}
 
-Détail d'un module. Scope : `modules:read`.
+Details of a module. Scope: `modules:read`.
 
-- **Entrée** : `id` (UUID, chemin).
-- **Sortie 200** : `ModuleView`. **Erreurs** : 403, 404.
+- **Input**: `id` (UUID, path).
+- **Output 200**: `ModuleView`. **Errors**: 403, 404.
 
 ---
 
-## Serveurs Hytale
+## Hytale servers
 
 ### POST /api/v1/servers
 
-Enregistre un serveur. Scope : `hytale_servers:write`. Un module non-admin ne peut
-créer que pour lui-même (`module_id` = son id) ; l'admin peut créer pour
-n'importe quel module.
+Registers a server. Scope: `hytale_servers:write`. A non-admin module may only
+create for itself (`module_id` = its own id); admin may create for any module.
 
-- **Entrée** :
+- **Input**:
 
 ```json
 { "module_id": "01a0a967-...", "name": "survie", "url": "https://hytale.example/survie" }
 ```
 
-| Champ | Type | Requis |
+| Field | Type | Required |
 |---|---|---|
-| `module_id` | UUID | oui |
-| `name` | string | oui (unique par module) |
-| `url` | string | oui |
+| `module_id` | UUID | yes |
+| `name` | string | yes (unique per module) |
+| `url` | string | yes |
 
-- **Sortie 201** : `HytaleServerView`.
-- **Erreurs** : 400 (champ vide), 403, 409 (nom déjà pris pour ce module).
+- **Output 201**: `HytaleServerView`.
+- **Errors**: 400 (empty field), 403, 409 (name already taken for this module).
 
 ### GET /api/v1/servers
 
-Liste paginée des serveurs. Scope : `hytale_servers:read`. La lecture est
-**globale** : tout module avec le scope voit tous les serveurs.
+Paginated list of servers. Scope: `hytale_servers:read`. Reads are **global**:
+any module with the scope sees all servers.
 
-- **Entrée** (query) :
+- **Input** (query):
 
-| Param | Type | Défaut | Note |
+| Param | Type | Default | Note |
 |---|---|---|---|
-| `module_id` | UUID | — | filtre optionnel par module propriétaire |
-| `limit` | int | 50 | borné 1–200 |
+| `module_id` | UUID | — | optional filter by owning module |
+| `limit` | int | 50 | clamped 1–200 |
 | `offset` | int | 0 | ≥ 0 |
 
-- **Sortie 200** : `Page<HytaleServerView>`. **Erreurs** : 403.
+- **Output 200**: `Page<HytaleServerView>`. **Errors**: 403.
 
 ### GET /api/v1/servers/{id}
 
-Scope : `hytale_servers:read`. Lecture globale.
+Scope: `hytale_servers:read`. Global read.
 
-- **Sortie 200** : `HytaleServerView`. **Erreurs** : 403, 404.
+- **Output 200**: `HytaleServerView`. **Errors**: 403, 404.
 
 ### DELETE /api/v1/servers/{id}
 
-Suppression logique (`deleted_at`). Scope : `hytale_servers:write`. Ownership requis
-(sauf admin).
+Soft delete (`deleted_at`). Scope: `hytale_servers:write`. Ownership required
+(except admin).
 
-- **Sortie 204** (vide). **Erreurs** : 403, 404.
+- **Output 204** (empty). **Errors**: 403, 404.
 
 ---
 
-## Sessions joueur — lecture
+## Player sessions — reads
 
 ### GET /api/v1/sessions
 
-Liste paginée des sessions. Scope : `player_sessions:read`.
+Paginated list of sessions. Scope: `player_sessions:read`.
 
-- **Entrée** (query) :
+- **Input** (query):
 
-| Param | Type | Défaut | Note |
+| Param | Type | Default | Note |
 |---|---|---|---|
-| `hytale_server_id` | UUID | — | filtre |
-| `hytale_id` | UUID | — | filtre |
-| `limit` | int | 50 | borné 1–200 |
+| `hytale_server_id` | UUID | — | filter |
+| `hytale_id` | UUID | — | filter |
+| `limit` | int | 50 | clamped 1–200 |
 | `offset` | int | 0 | ≥ 0 |
 
-- **Sortie 200** : `Page<PlayerSessionView>`. **Erreurs** : 401, 403.
+- **Output 200**: `Page<PlayerSessionView>`. **Errors**: 401, 403.
 
 ### GET /api/v1/players/{hytale_id}/sessions
 
-Sessions d'un joueur, éventuellement filtrées par serveur. Scope :
-`player_sessions:read`. Utilisé par le site Laravel et le bot Discord.
+A player's sessions, optionally filtered by server. Scope:
+`player_sessions:read`. Used by the Laravel site and the Discord bot.
 
-- **Entrée** (chemin + query) : `hytale_id` (chemin), puis `hytale_server_id`,
+- **Input** (path + query): `hytale_id` (path), then `hytale_server_id`,
   `limit`, `offset`.
-- **Sortie 200** : `Page<PlayerSessionView>`. **Erreurs** : 401, 403.
+- **Output 200**: `Page<PlayerSessionView>`. **Errors**: 401, 403.
 
 ---
 
@@ -253,34 +252,33 @@ Sessions d'un joueur, éventuellement filtrées par serveur. Scope :
 
 ### GET /api/v1/whitelists
 
-Liste paginée de la whitelist. Scope : `whitelist:read`.
+Paginated list of the whitelist. Scope: `whitelist:read`.
 
-- **Entrée** (query) : `hytale_server_id`, `hytale_id`, `limit`, `offset`.
-- **Sortie 200** : `Page<WhitelistView>`. **Erreurs** : 401, 403.
+- **Input** (query): `hytale_server_id`, `hytale_id`, `limit`, `offset`.
+- **Output 200**: `Page<WhitelistView>`. **Errors**: 401, 403.
 
 ### GET /api/v1/players/{hytale_id}/whitelists
 
-Whitelist d'un joueur, éventuellement filtrée par serveur. Scope :
-`whitelist:read`.
+A player's whitelist, optionally filtered by server. Scope: `whitelist:read`.
 
-- **Sortie 200** : `Page<WhitelistView>`. **Erreurs** : 401, 403.
+- **Output 200**: `Page<WhitelistView>`. **Errors**: 401, 403.
 
 ### POST /api/v1/whitelists
 
-Ajoute une entrée. Scope : `whitelist:write`. Le serveur doit appartenir au
-module (sauf admin).
+Adds an entry. Scope: `whitelist:write`. The server must belong to the module
+(except admin).
 
-- **Entrée** : `{ "hytale_server_id": "UUID", "hytale_id": "UUID" }`.
-- **Sortie 201** : `WhitelistView`. Idempotent.
-- **Erreurs** : 401, 403 (scope manquant ou serveur non possédé).
+- **Input**: `{ "hytale_server_id": "UUID", "hytale_id": "UUID" }`.
+- **Output 201**: `WhitelistView`. Idempotent.
+- **Errors**: 401, 403 (missing scope or server not owned).
 
 ### DELETE /api/v1/whitelists/{id}
 
-Suppression logique. Scope : `whitelist:write`. L'entrée doit dépendre d'un
-serveur du module (sauf admin).
+Soft delete. Scope: `whitelist:write`. The entry must belong to a server of the
+module (except admin).
 
-- **Entrée** : `id` (UUID, chemin).
-- **Sortie 204** (vide). **Erreurs** : 401, 403, 404.
+- **Input**: `id` (UUID, path).
+- **Output 204** (empty). **Errors**: 401, 403, 404.
 
 ---
 
@@ -288,10 +286,10 @@ serveur du module (sauf admin).
 
 ### POST /api/v1/webhook
 
-Ingestion d'événements. Scope : `player_sessions:write`. Le serveur doit
-appartenir au module (sauf admin).
+Event ingestion. Scope: `player_sessions:write`. The server must belong to the
+module (except admin).
 
-- **Entrée** — variantes (discriminant `event_type`) :
+- **Input** — variants (discriminant `event_type`):
 
 ```json
 { "event_type": "session_started", "hytale_server_id": "UUID", "hytale_id": "UUID", "joined_at": "2026-09-16T08:00:00Z" }
@@ -301,30 +299,30 @@ appartenir au module (sauf admin).
 { "event_type": "session_ended", "hytale_server_id": "UUID", "hytale_id": "UUID" }
 ```
 
-| Champ | Type | Requis |
+| Field | Type | Required |
 |---|---|---|
-| `event_type` | `"session_started"` \| `"session_ended"` | oui |
-| `hytale_server_id` | UUID | oui |
-| `hytale_id` | UUID | oui |
-| `joined_at` | RFC 3339 | non (défaut `now()`), `session_started` uniquement |
+| `event_type` | `"session_started"` \| `"session_ended"` | yes |
+| `hytale_server_id` | UUID | yes |
+| `hytale_id` | UUID | yes |
+| `joined_at` | RFC 3339 | no (default `now()`), `session_started` only |
 
-- **Sortie 202** (`session_started`) :
+- **Output 202** (`session_started`):
 
 ```json
 { "id": "01a0a967-...", "status": "accepted" }
 ```
 
-- **Sortie 202** (`session_ended`) :
+- **Output 202** (`session_ended`):
 
 ```json
 { "hytale_id": "11111111-...", "status": "closed" }
 ```
 
-`status` vaut `"no_open_session"` si aucune session ouverte n'a été trouvée.
+`status` is `"no_open_session"` if no open session was found.
 
-- **Erreurs** : 400 (`event_type` inconnu/champ manquant), 401, 403.
+- **Errors**: 400 (unknown `event_type`/missing field), 401, 403.
 
-### Exemple de signature
+### Signature example
 
 ```bash
 TS=$(date +%s)
@@ -339,11 +337,11 @@ curl -X POST http://localhost:3000/api/v1/webhook \
   -d "$BODY"
 ```
 
-### Amorçage du premier module (backoffice)
+### Bootstrapping the first module (backoffice)
 
-Au démarrage, si `SEED_ADMIN_API_KEY` et `SEED_ADMIN_HMAC_SECRET` sont définis et
-qu'aucun module nommé `admin` n'existe, le core le crée avec tous les scopes.
-Ensuite, créer les autres modules avec un `curl` signé :
+At startup, if `SEED_ADMIN_API_KEY` and `SEED_ADMIN_HMAC_SECRET` are set and no
+module named `admin` exists, the core creates it with all scopes. Then create
+the other modules with a signed `curl`:
 
 ```bash
 BODY='{"name":"siteweb","scopes":["hytale_servers:read","player_sessions:read","whitelist:read","whitelist:write"]}'

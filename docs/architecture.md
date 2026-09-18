@@ -1,106 +1,107 @@
 # Architecture — api-core
 
-Dernière mise à jour : 18 septembre 2026
+Last updated: 18 September 2026
 
-`api-core` est le **hub** qui met en relation tous les services de l'écosystème
-Hytale. Les consommateurs ne se parlent jamais directement : ils passent tous
-par le core.
+`api-core` is the **hub** connecting every service of the Hytale ecosystem.
+Consumers never talk to each other directly: they all go through the core.
 
 ```
-plugin Hytale ─┐
-site Laravel   ─┼──►  api-core (hub)  ──►  PostgreSQL
-bot Discord    ─┘         │
-                          └──► orchestration (futur) ──► serveurs Hytale
+Hytale plugin  ─┐
+Laravel site    ─┼──►  api-core (hub)  ──►  PostgreSQL
+Discord bot    ─┘         │
+                          └──► orchestration (future) ──► Hytale servers
 ```
 
-## Règles fondatrices
+## Founding rules
 
-1. **Un consommateur = un module.** Le plugin, le site Laravel, le bot Discord,
-   le backoffice et (plus tard) l'orchestration sont tous enregistrés comme des
-   modules authentifiés par API key + HMAC. Il n'y a **qu'une seule logique
-   d'authentification** : pas d'endpoints admin protégés par un token séparé.
-2. **Le core ne connaît que des modules et des `hytale_id`.** Jamais de compte
-   utilisateur. La création de compte, l'OAuth et le mapping compte ↔ `hytale_id`
-   vivent dans le site Laravel (et le mapping user Discord ↔ `hytale_id` dans le
-   bot), pas dans le core.
-3. **`hytale_id` est un filtre de données, pas une identité.** L'autorisation
-   repose uniquement sur le `Principal` authentifié (module + scopes).
-4. **Ownership vs visibilité.** L'écriture sur un serveur est restreinte à son
-   module propriétaire (`hytale_servers.module_id`). La lecture est globale pour
-   tout module disposant du scope `:read` correspondant : consulter n'est pas
-   risqué, seules les modifications sont restreintes. Le scope `admin` contourne
-   le contrôle d'ownership (backoffice).
-5. **Aucun appel réseau sortant dans le chemin d'une requête HTTP.** Les effets
-   longs (orchestration) passeront par une table `outbox`/`jobs` et un worker.
+1. **One consumer = one module.** The plugin, the Laravel site, the Discord
+   bot, the backoffice and (later) orchestration are all registered as modules
+   authenticated by API key + HMAC. There is **a single authentication model**:
+   no admin endpoints protected by a separate token.
+2. **The core only knows modules and `hytale_id` values.** Never a user
+   account. Account creation, OAuth and the account ↔ `hytale_id` mapping live
+   in the Laravel site (and the Discord user ↔ `hytale_id` mapping in the bot),
+   not in the core.
+3. **`hytale_id` is a data filter, not an identity.** Authorization relies only
+   on the authenticated `Principal` (module + scopes).
+4. **Ownership vs visibility.** Writes on a server are restricted to its owning
+   module (`hytale_servers.module_id`). Reads are global for any module holding
+   the matching `:read` scope: reading is not risky, only modifications are
+   restricted. The `admin` scope bypasses the ownership check (backoffice).
+5. **No outbound network calls in an HTTP request path.** Long effects
+   (orchestration) will go through an `outbox`/`jobs` table and a worker.
 
-## Structure du code
+## Code structure
 
 ```
 src/
-├── main.rs                # bootstrap : config, pool, migrations, seed, serve
+├── main.rs                # bootstrap: config, pool, migrations, seed, serve
 ├── config.rs              # env -> Config
 ├── error.rs               # AppError + IntoResponse
 ├── state.rs               # AppState { db, crypto, config }
-├── crypto.rs              # AES-256-GCM + HMAC déterministe
-├── testutil.rs            # helpers de test (#[cfg(test)])
-├── http/                  # transport uniquement
+├── crypto.rs              # AES-256-GCM + deterministic HMAC
+├── testutil.rs            # test helpers (#[cfg(test)])
+├── http/                  # transport only
 │   ├── mod.rs
-│   ├── router.rs          # assemblage des routes + layers
+│   ├── router.rs          # route + layer assembly
 │   ├── middleware.rs      # module_auth (API key + HMAC)
 │   ├── extractors.rs      # Principal, ...
 │   └── health.rs          # GET /health
-├── shared/                # utilitaires transverses
+├── shared/                # cross-cutting utilities
 │   ├── mod.rs
-│   ├── hmac.rs            # vérification de signature de requête
+│   ├── hmac.rs            # request signature verification
+│   ├── identity.rs        # Principal (module + scopes)
+│   ├── logs.rs            # centralized log messages
+│   ├── scopes.rs          # scope constants
 │   └── pagination.rs      # Page<T>, pagination
 ├── domains/
-│   ├── modules/           # registre + gestion des modules
-│   ├── servers/           # serveurs Hytale
-│   ├── sessions/          # sessions joueur
-│   ├── whitelists/        # whitelist joueur
-│   └── orchestration/     # (futur) mise à jour des serveurs
+│   ├── modules/           # module registry + management
+│   ├── servers/           # Hytale servers
+│   ├── sessions/          # player sessions
+│   ├── whitelists/        # player whitelist
+│   └── orchestration/     # (future) server updates
 └── ingest/
     ├── mod.rs
     └── webhook.rs         # WebhookEvent -> sessions::service
 ```
 
-Chaque domaine suit toujours le même découpage (fichiers plats) :
+Every domain always follows the same flat layout:
 
-| Fichier | Rôle |
+| File | Role |
 |---|---|
-| `model.rs` | rows `FromRow`, vues `Serialize`, requêtes `Deserialize` |
-| `repo.rs` | SQL pur, aucune règle métier |
-| `service.rs` | règles métier, ownership, idempotence, validations |
-| `handler.rs` | extraction HTTP, vérification de scope, appel `service` |
+| `model.rs` | `FromRow` rows, `Serialize` views, `Deserialize` requests |
+| `repo.rs` | pure SQL, no business rule |
+| `service.rs` | business rules, ownership, idempotence, validations |
+| `handler.rs` | HTTP extraction, scope check, `service` call |
 
-## Frontières
+## Boundaries
 
-- `service` ne dépend **jamais** de `http`. Il est testable sans serveur.
-- `handler` ne contient **aucun SQL** et reste mince (~10 lignes).
-- `repo` ne contient **aucune règle** (pas d'`assert_*`).
-- `http` est le seul endroit qui parle Axum.
-- Les traits de repository ne sont pas introduits tant qu'il n'y a qu'un backend
-  (`#[sqlx::test]` couvre la testabilité DB).
+- `service` **never** depends on `http`. It is testable without a server.
+- `handler` contains **no SQL** and stays thin (~10 lines).
+- `repo` contains **no rule** (no `assert_*`).
+- `http` is the only place that speaks Axum.
+- Repository traits are not introduced while there is a single backend
+  (`#[sqlx::test]` covers DB testability).
 
-## Flux d'une requête
+## Request flow
 
 ```
 Laravel / bot / plugin
-        │  X-Api-Key (+ HMAC si écriture)
+        │  X-Api-Key (+ HMAC on writes)
         ▼
 http::middleware module_auth ──► Principal (module + scopes)
         ▼
-domains::<domaine>::handler
-        │  require(scope), extrait hytale_id / filtres
+domains::<domain>::handler
+        │  require(scope), extract hytale_id / filters
         ▼
-domains::<domaine>::service ──► autre service (ownership)
+domains::<domain>::service ──► other service (ownership)
         ▼
-domains::<domaine>::repo ──► PostgreSQL
+domains::<domain>::repo ──► PostgreSQL
 ```
 
-## Amorçage (seed)
+## Bootstrap (seed)
 
-Créer un module exige d'être un module : il faut un point de départ. Au
-démarrage, si `SEED_ADMIN_API_KEY` et `SEED_ADMIN_HMAC_SECRET` sont définis et
-qu'aucun module nommé `admin` n'existe, le core le crée avec tous les scopes.
-Le seed est idempotent. Pour gérer ensuite les autres modules : `curl`.
+Creating a module requires being a module: there must be a starting point. At
+startup, if `SEED_ADMIN_API_KEY` and `SEED_ADMIN_HMAC_SECRET` are set and no
+module named `admin` exists, the core creates it with all scopes. The seed is
+idempotent. Manage the other modules afterwards with `curl`.
