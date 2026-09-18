@@ -1,57 +1,69 @@
-# Specs — API Rust (Axum)
+# Specs — Rust API (Axum)
 
-Dernière vérification : 15 septembre 2026
+Last verification: 15 September 2026
 
-## 1. Objectif
+## 1. Goal
 
-API HTTP en Rust capable de :
-- gérer plusieurs requêtes simultanément (multi-thread / async) ;
-- exposer un endpoint webhook (réception d'événements POST) ;
-- se connecter à une base de données relationnelle.
+HTTP API in Rust able to:
+- handle several requests simultaneously (multi-thread / async);
+- expose a webhook endpoint (receiving POST events);
+- connect to a relational database.
 
-## 2. Stack retenue et état de maintenance
+## 2. Chosen stack and maintenance status
 
-| Crate | Rôle | Dernière version (sept. 2026) | Statut |
+| Crate | Role | Latest version (Sept. 2026) | Status |
 |---|---|---|---|
-| `axum` | Framework web | **0.8.7** | ✅ Activement maintenu par l'équipe Tokio, releases régulières |
-| `tokio` | Runtime async / multi-thread | **1.53.1** | ✅ Très activement maintenu. Deux branches LTS en cours : 1.47.x (support jusqu'à sept. 2026) et 1.51.x (support jusqu'à mars 2027) |
-| `sqlx` | Accès BDD async | **0.9.0** (0.8.6 encore très répandu) | ✅ Maintenu, mais release process partiellement manuel — bien vérifier les changelogs lors d'un upgrade majeur |
-| `tower` / `tower-http` | Middlewares (logs, CORS, timeouts...) | `tower` 0.5.3 / `tower-http` 0.7.1 | ✅ Maintenu, intégré nativement à l'écosystème Axum |
-| `serde` / `serde_json` | Sérialisation JSON | **1.0.229** | ✅ Extrêmement stable, maintenu depuis des années, quasi-standard de facto |
-| `axum-extra` (optionnel) | Utilitaires Axum (cookies, typed headers...) | 0.12.6 | ✅ Maintenu en parallèle d'Axum |
+| `axum` | Web framework | **0.8.7** | ✅ Actively maintained by the Tokio team, regular releases |
+| `tokio` | Async / multi-thread runtime | **1.53.1** | ✅ Very actively maintained. Two LTS branches in progress: 1.47.x (supported until Sept. 2026) and 1.51.x (supported until March 2027) |
+| `sqlx` | Async DB access | **0.9.0** (0.8.6 still widespread) | ✅ Maintained, but the release process is partly manual — always check the changelogs on a major upgrade |
+| `tower` / `tower-http` | Middlewares (logs, CORS, timeouts...) | `tower` 0.5.3 / `tower-http` 0.7.1 | ✅ Maintained, natively integrated into the Axum ecosystem |
+| `serde` / `serde_json` | JSON serialization | **1.0.229** | ✅ Extremely stable, maintained for years, de facto standard |
+| `axum-extra` (optional) | Axum utilities (cookies, typed headers...) | 0.12.6 | ✅ Maintained alongside Axum |
 
-**Verdict global : toute la stack proposée est activement maintenue en septembre 2026.** Aucun signal d'abandon détecté. Point de vigilance : `sqlx` publie parfois des versions majeures (0.8 → 0.9) donc figer la version dans `Cargo.toml` et lire le changelog avant de monter de version.
+**Overall verdict: the whole proposed stack is actively maintained in September
+2026.** No sign of abandonment. Point of caution: `sqlx` sometimes publishes
+major versions (0.8 → 0.9), so pin the version in `Cargo.toml` and read the
+changelog before upgrading.
 
-## 3. Choix du framework : Axum vs Actix-web
+## 3. Framework choice: Axum vs Actix-web
 
-| Critère | Axum | Actix-web |
+| Criterion | Axum | Actix-web |
 |---|---|---|
-| Modèle de concurrence | Un seul runtime Tokio multi-thread, work-stealing | Acteurs / plusieurs runtimes Tokio mono-thread |
-| Perf brute (req/s saturé) | ~18 000 | ~20 000 |
-| RAM idle | 60–90 MB | 50–80 MB |
-| Écosystème | Tower/Hyper/SQLx — cohérent avec l'async Rust "standard" | Plus autonome, historique |
-| Maintenabilité / courbe d'apprentissage | Plus simple, handlers = fonctions async classiques | Plus complexe (modèle acteur), mais très performant |
+| Concurrency model | Single multi-thread Tokio runtime, work-stealing | Actors / several single-thread Tokio runtimes |
+| Raw perf (saturated req/s) | ~18,000 | ~20,000 |
+| Idle RAM | 60–90 MB | 50–80 MB |
+| Ecosystem | Tower/Hyper/SQLx — consistent with "standard" async Rust | More self-contained, historical |
+| Maintainability / learning curve | Simpler, handlers = regular async functions | More complex (actor model), but very performant |
 
-**Décision : Axum.** L'écart de perf (~10-15%) n'a pas d'impact réel pour la majorité des API (le goulot d'étranglement est presque toujours la BDD ou la logique métier, pas le framework). Axum offre une meilleure ergonomie et une intégration plus naturelle avec SQLx et Tower.
+**Decision: Axum.** The perf gap (~10-15%) has no real impact for the majority
+of APIs (the bottleneck is almost always the database or the business logic,
+not the framework). Axum offers better ergonomics and a more natural
+integration with SQLx and Tower.
 
-## 4. Multi-threading / concurrence
+## 4. Multi-threading / concurrency
 
-- Pas de gestion manuelle de threads nécessaire.
-- Le runtime Tokio (`#[tokio::main]`, flavor `multi_thread` par défaut) répartit chaque requête entrante comme une tâche asynchrone légère sur un pool de threads OS, avec un ordonnanceur *work-stealing*.
-- Chaque `async fn` handler dans Axum peut être exécuté concurremment sans blocage — tant qu'on évite le code bloquant synchrone (sinon utiliser `tokio::task::spawn_blocking`).
+- No manual thread management required.
+- The Tokio runtime (`#[tokio::main]`, default `multi_thread` flavor) distributes
+  each incoming request as a lightweight async task over a pool of OS threads,
+  with a *work-stealing* scheduler.
+- Each `async fn` handler in Axum can run concurrently without blocking — as
+  long as synchronous blocking code is avoided (otherwise use
+  `tokio::task::spawn_blocking`).
 
 ```rust
-#[tokio::main] // multi-thread par défaut
+#[tokio::main] // multi-thread by default
 async fn main() {
     // ...
 }
 ```
 
-## 5. Connexion base de données
+## 5. Database connection
 
-- Driver retenu : **SQLx** (async natif, compatible Postgres / MySQL / SQLite, vérification des requêtes à la compilation).
-- Alternative si besoin d'un vrai ORM typé : **SeaORM** (construit sur SQLx).
-- Gestion du pool de connexions via `sqlx::Pool`, partagé entre les handlers via l'état Axum (`State`).
+- Chosen driver: **SQLx** (native async, compatible with Postgres / MySQL /
+  SQLite, compile-time query verification).
+- Alternative if a real typed ORM is needed: **SeaORM** (built on SQLx).
+- Connection pool managed through `sqlx::Pool`, shared across handlers through
+  the Axum state (`State`).
 
 ```rust
 let pool = sqlx::postgres::PgPoolOptions::new()
@@ -60,13 +72,14 @@ let pool = sqlx::postgres::PgPoolOptions::new()
     .await?;
 ```
 
-## 6. Endpoint Webhook
+## 6. Webhook endpoint
 
-- Un webhook = une route HTTP POST classique exposée par l'API.
-- Bonnes pratiques :
-  - vérifier la signature de la requête (header HMAC fourni par l'émetteur du webhook) ;
-  - répondre rapidement (200 OK) puis traiter l'événement de façon asynchrone si le traitement est long, pour éviter les timeouts / retries côté émetteur ;
-  - journaliser les payloads reçus pour debug.
+- A webhook = a regular HTTP POST route exposed by the API.
+- Best practices:
+  - verify the request signature (HMAC header provided by the webhook sender);
+  - respond quickly (200 OK) then process the event asynchronously if the
+    processing is long, to avoid timeouts / retries on the sender side;
+  - log the received payloads for debugging.
 
 ```rust
 async fn webhook_handler(
@@ -74,21 +87,21 @@ async fn webhook_handler(
     headers: HeaderMap,
     Json(payload): Json<WebhookPayload>,
 ) -> StatusCode {
-    // 1. vérifier la signature (header HMAC)
-    // 2. traiter / enregistrer l'événement
+    // 1. verify the signature (HMAC header)
+    // 2. process / store the event
     StatusCode::OK
 }
 ```
 
-## 7. Prochaines étapes suggérées
+## 7. Suggested next steps
 
-1. Générer le squelette de projet (`Cargo.toml` + `main.rs` + structure de dossiers).
-2. Définir le schéma de base de données et les migrations (`sqlx-cli`).
-3. Implémenter les routes principales + le endpoint webhook.
-4. Ajouter les middlewares Tower (logs, CORS, rate limiting) selon besoin.
-5. Tests d'intégration + config de déploiement.
+1. Generate the project skeleton (`Cargo.toml` + `main.rs` + folder structure).
+2. Define the database schema and migrations (`sqlx-cli`).
+3. Implement the main routes + the webhook endpoint.
+4. Add Tower middlewares (logs, CORS, rate limiting) as needed.
+5. Integration tests + deployment config.
 
-## 8. Sources consultées
+## 8. Sources consulted
 
-- Comparatifs Axum vs Actix-web 2026 (Medium, Rustify)
-- crates.io / docs.rs pour les numéros de version (axum, tokio, sqlx, serde, tower)
+- Axum vs Actix-web comparisons 2026 (Medium, Rustify)
+- crates.io / docs.rs for version numbers (axum, tokio, sqlx, serde, tower)

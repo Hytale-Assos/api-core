@@ -3,7 +3,7 @@ use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
 
-/// Vérifie une signature en comparaison à temps constant.
+/// Verifies a signature using a constant-time comparison.
 pub fn verify(secret: &str, timestamp: &str, body: &[u8], provided_hex: &str) -> bool {
     let provided = match hex::decode(provided_hex.trim()) {
         Ok(bytes) => bytes,
@@ -11,7 +11,7 @@ pub fn verify(secret: &str, timestamp: &str, body: &[u8], provided_hex: &str) ->
     };
 
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-        .expect("HMAC accepte une clé de taille arbitraire");
+        .expect("HMAC accepts a key of arbitrary size");
     mac.update(timestamp.as_bytes());
     mac.update(b".");
     mac.update(body);
@@ -23,13 +23,13 @@ pub fn verify(secret: &str, timestamp: &str, body: &[u8], provided_hex: &str) ->
 mod tests {
     use super::*;
 
-    /// Calcule la signature HMAC-SHA256 attendue pour une requête.
+    /// Computes the expected HMAC-SHA256 signature for a request.
     ///
-    /// Le message signé est `"{timestamp}.{body}"`. Sert de référence pour
-    /// vérifier `verify` (les modules génèrent leur propre signature).
+    /// The signed message is `"{timestamp}.{body}"`. Serves as a reference to
+    /// check `verify` (modules generate their own signature).
     fn sign(secret: &str, timestamp: &str, body: &[u8]) -> String {
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes())
-            .expect("HMAC accepte une clé de taille arbitraire");
+            .expect("HMAC accepts a key of arbitrary size");
         mac.update(timestamp.as_bytes());
         mac.update(b".");
         mac.update(body);
@@ -38,7 +38,11 @@ mod tests {
 
     #[test]
     fn verify_accepts_matching_signature() {
-        let signature = sign("s3cr3t", "1700000000", br#"{"event_type":"session_started"}"#);
+        let signature = sign(
+            "s3cr3t",
+            "1700000000",
+            br#"{"event_type":"session_started"}"#,
+        );
         assert!(verify(
             "s3cr3t",
             "1700000000",

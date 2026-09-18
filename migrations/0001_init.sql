@@ -1,14 +1,14 @@
--- Schéma initial de l'API core.
+-- Initial schema of the API core.
 --
--- Principes :
--- - Clés primaires UUID v7 générées côté application (ordonnées dans le temps).
--- - Horodatage en TIMESTAMPTZ.
--- - Suppression logique via `deleted_at` ; désactivation via `is_enabled`.
--- - `updated_at` maintenu automatiquement par le trigger `set_updated_at()`.
--- - Chiffrement applicatif : seuls les secrets (voir `src/crypto.rs`) sont
---   chiffrés AES-256-GCM avant insertion. Le reste est stocké en clair.
+-- Principles:
+-- - UUID v7 primary keys generated in the application (time-ordered).
+-- - TIMESTAMPTZ timestamps.
+-- - Soft delete through `deleted_at`; disabling through `is_enabled`.
+-- - `updated_at` maintained automatically by the `set_updated_at()` trigger.
+-- - Application-level encryption: only secrets (see `src/crypto.rs`) are
+--   AES-256-GCM encrypted before insertion. The rest is stored in the clear.
 
--- Fonction utilitaire : met à jour `updated_at` à chaque UPDATE.
+-- Utility function: updates `updated_at` on every UPDATE.
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -17,11 +17,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Modules autorisés à parler au core (website, plugin Hytale, bot Discord...).
+-- Modules allowed to talk to the core (website, Hytale plugin, Discord bot...).
 --
--- `api_key_hash` est un HMAC-SHA256 déterministe (index de recherche sûr) :
--- il permet de retrouver un module par API key sans stocker la clé en clair.
--- `hmac_secret` est chiffré AES-256-GCM, au format base64(nonce || ciphertext || tag).
+-- `api_key_hash` is a deterministic HMAC-SHA256 (safe lookup index): it allows
+-- finding a module by API key without storing the key in the clear.
+-- `hmac_secret` is AES-256-GCM encrypted, as base64(nonce || ciphertext || tag).
 CREATE TABLE IF NOT EXISTS modules (
     id            UUID PRIMARY KEY,
     name          TEXT NOT NULL UNIQUE,
@@ -38,14 +38,14 @@ CREATE TRIGGER trg_modules_updated_at
     BEFORE UPDATE ON modules
     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
--- Scopes accordés à un module (remplace l'ancien champ `kind`).
+-- Scopes granted to a module (replaces the old `kind` field).
 CREATE TABLE IF NOT EXISTS module_scopes (
     module_id  UUID NOT NULL REFERENCES modules (id) ON DELETE CASCADE,
     scope      TEXT NOT NULL,
     PRIMARY KEY (module_id, scope)
 );
 
--- Serveurs Hytale gérés par un module.
+-- Hytale servers managed by a module.
 CREATE TABLE IF NOT EXISTS hytale_servers (
     id          UUID PRIMARY KEY,
     module_id   UUID NOT NULL REFERENCES modules (id),
@@ -67,10 +67,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_hytale_servers_module_name
 CREATE INDEX IF NOT EXISTS idx_hytale_servers_module_id
     ON hytale_servers (module_id);
 
--- Sessions de connexion des joueurs.
+-- Player connection sessions.
 --
--- Le plugin n'émet une requête qu'une fois le joueur entré dans le monde :
--- `joined_at` est donc NOT NULL. `ended_at IS NULL` = session en cours.
+-- The plugin only sends a request once the player has entered the world:
+-- `joined_at` is therefore NOT NULL. `ended_at IS NULL` = session in progress.
 CREATE TABLE IF NOT EXISTS player_sessions (
     id                UUID PRIMARY KEY,
     hytale_server_id  UUID NOT NULL REFERENCES hytale_servers (id),
@@ -96,7 +96,7 @@ CREATE INDEX IF NOT EXISTS idx_player_sessions_active
     ON player_sessions (ended_at)
     WHERE ended_at IS NULL;
 
--- Whitelist des joueurs, par serveur Hytale.
+-- Player whitelist, per Hytale server.
 CREATE TABLE IF NOT EXISTS whitelists (
     id                UUID PRIMARY KEY,
     hytale_server_id  UUID NOT NULL REFERENCES hytale_servers (id),

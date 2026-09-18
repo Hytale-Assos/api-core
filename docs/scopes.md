@@ -1,62 +1,72 @@
-# Scopes — répertoire
+# Scopes — reference
 
-Dernière mise à jour : 16 septembre 2026
+Last updated: 18 September 2026
 
-Un **scope** est une permission nommée accordée à un module (voir
-`module_scopes` dans `docs/schema.md`). Il remplace l'ancien champ `kind` et
-permet d'autoriser finement un module selon le service qu'il représente
-(website, plugin Hytale, bot Discord...).
+A **scope** is a named permission granted to a module (see `module_scopes` in
+`docs/schema.md`). It replaced the old `kind` field and allows fine-grained
+authorization of a module according to the service it represents (website,
+Hytale plugin, Discord bot, backoffice...).
 
 ## Format
 
 ```
-<ressource>:<action>
+<resource>:<action>
 ```
 
-- `ressource` : la table/entité métier concernée (ex. `player_sessions`).
-- `action` : `read` ou `write`.
+- `resource`: the business table/entity concerned (e.g. `player_sessions`).
+- `action`: `read` or `write`.
 
-Le stockage est du `TEXT` libre en base (extensible sans migration). Les
-constantes de référence vivent dans `src/models.rs` (`pub mod scopes`).
+Storage is free-form `TEXT` in the database (extensible without migration). The
+reference constants live in `src/shared/scopes.rs`.
 
-## Scopes actuels
+## Current scopes
 
-| Scope | Constante | Accès accordé | Endpoints concernés |
+| Scope | Constant | Access granted | Endpoints concerned |
 |---|---|---|---|
-| `player_sessions:read` | `PLAYER_SESSIONS_READ` | Lire les sessions | `GET /api/v1/sessions` |
-| `player_sessions:write` | `PLAYER_SESSIONS_WRITE` | Créer/clôturer des sessions | `POST /api/v1/webhook` (events `session_started`, `session_ended`) |
-| `whitelist:read` | `WHITELIST_READ` | Lire la whitelist | `GET /api/v1/whitelists` |
-| `whitelist:write` | `WHITELIST_WRITE` | Ajouter/retirer des entrées | `POST /api/v1/whitelists`, `DELETE /api/v1/whitelists/{id}` |
+| `player_sessions:read` | `PLAYER_SESSIONS_READ` | Read sessions | `GET /api/v1/sessions`, `GET /api/v1/players/{hytale_id}/sessions` |
+| `player_sessions:write` | `PLAYER_SESSIONS_WRITE` | Create/end sessions | `POST /api/v1/webhook` (events `session_started`, `session_ended`) |
+| `whitelist:read` | `WHITELIST_READ` | Read the whitelist | `GET /api/v1/whitelists`, `GET /api/v1/players/{hytale_id}/whitelists` |
+| `whitelist:write` | `WHITELIST_WRITE` | Add/remove entries | `POST /api/v1/whitelists`, `DELETE /api/v1/whitelists/{id}` |
+| `hytale_servers:read` | `HYTALE_SERVERS_READ` | List/read **all** servers | `GET /api/v1/servers`, `GET /api/v1/servers/{id}` |
+| `hytale_servers:write` | `HYTALE_SERVERS_WRITE` | Create/delete a server | `POST /api/v1/servers`, `DELETE /api/v1/servers/{id}` |
+| `modules:read` | `MODULES_READ` | List/read modules | `GET /api/v1/modules`, `GET /api/v1/modules/{id}` |
+| `modules:write` | `MODULES_WRITE` | Register a module | `POST /api/v1/modules` |
+| `admin` | `ADMIN` | Bypasses ownership checks | backoffice |
 
-### Portée des écritures de whitelist
+## Ownership vs visibility
 
-Un module ne peut écrire que sur les serveurs qui **lui appartiennent** :
-`POST` vérifie `hytale_server_id` via `assert_server_owned`, et `DELETE`
-vérifie l'entrée via `assert_whitelist_owned`. Sinon → `403 Forbidden`.
+There are no more `/admin/*` endpoints protected by a separate token: the
+backoffice is a **module** holding the `admin` scope and the `*:read` /
+`*:write` scopes.
 
-L'administration (`/api/v1/admin/whitelists`) reste protégée par `ADMIN_TOKEN`
-et n'exige pas de scope.
+- **Writes**: a module may only write to its own servers (`assert_owned`). The
+  `admin` scope (backoffice) bypasses this restriction.
+- **Reads**: `hytale_servers:read` grants access to **all** servers. Reading is
+  not risky, only modifications are restricted. The `module_id` filter lets a
+  caller voluntarily narrow the list.
 
-## Routes non concernées par les scopes
+## Routes not concerned by scopes
 
 | Route | Protection |
 |---|---|
-| `GET /health` | publique |
-| `/api/v1/admin/*` | `X-Admin-Token` (`ADMIN_TOKEN`), pas de scope |
+| `GET /health` | public |
+
+All other routes require `X-Api-Key` (reads) or `X-Api-Key` + HMAC signature
+(writes).
 
 ## Attribution
 
-- Les scopes sont fournis à la création du module :
-  `POST /api/v1/admin/modules` avec `"scopes": ["player_sessions:read", ...]`.
-- Ils sont renvoyés par `GET /api/v1/admin/modules` et
-  `GET /api/v1/admin/modules/{id}`.
-- Le middleware `module_auth` (`src/auth/middleware.rs`) les charge dans
-  `AuthenticatedModule` ; chaque handler vérifie via `has_scope(...)` et
-  renvoie `403 Forbidden` sinon.
+- Scopes are provided at module creation:
+  `POST /api/v1/modules` with `"scopes": ["player_sessions:read", ...]`.
+- The `admin` module is seeded at startup if `SEED_ADMIN_API_KEY` and
+  `SEED_ADMIN_HMAC_SECRET` are set.
+- The `module_auth` middleware (`src/http/middleware.rs`) loads scopes into the
+  `Principal` (`src/shared/identity.rs`); each handler checks them through
+  `principal.require(...)` and returns `403 Forbidden` otherwise.
 
-## Ajouter un scope
+## Adding a scope
 
-1. Ajouter la constante dans `src/models.rs` (`pub mod scopes`).
-2. Vérifier le scope dans le handler concerné (`module.has_scope(...)`).
-3. Le documenter dans le tableau ci-dessus.
-4. Aucune migration SQL nécessaire (stockage `TEXT`).
+1. Add the constant in `src/shared/scopes.rs`.
+2. Check it in the relevant handler (`principal.require(...)`).
+3. Document it in the table above.
+4. No SQL migration needed (`TEXT` storage).
