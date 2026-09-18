@@ -225,9 +225,9 @@ connexion longue), pas de contrat protobuf typé, ack implicite par le 202.
 | Fichier | Changement |
 |---|---|
 | `migrations/0001_init.sql` | **Réécrite** en schéma cible (rien n'est commité, pas de `0002`). `events` supprimée, `kind` → `module_scopes`, `active` → `is_enabled`, UUID v7, triggers `updated_at`, index partiels. |
-| `src/models.rs` | `ModuleRow` : `kind` → scopes, `active` → `is_enabled`, ajout `deleted_at`. Nouveaux modèles `HytaleServer`, `PlayerSession`, `Whitelist`. |
-| `src/db.rs` | Requêtes `events` remplacées par les tables métier ; filtres `deleted_at IS NULL`. |
-| `src/routes/webhook.rs` | Routage par scope vers la table métier. |
-| `src/auth/middleware.rs` | Vérification du scope après authentification HMAC. |
-| `src/routes/events.rs` | Routes `events` à retirer/remplacer. |
+| `src/domains/<domaine>/model.rs` | Rows `FromRow`, vues `Serialize`, requêtes `Deserialize`, découpés par domaine. |
+| `src/domains/<domaine>/repo.rs` | Requêtes SQL par table métier ; filtres `deleted_at IS NULL`. |
+| `src/domains/<domaine>/service.rs` | Règles métier, ownership et idempotence, hors du transport HTTP. |
+| `src/ingest/webhook.rs` | Routage par scope vers le service du domaine concerné. |
+| `src/http/middleware.rs` | Vérification de l'API key/HMAC puis injection du `Principal`. |
 | `src/crypto.rs` | Inchangé (AES-256-GCM + HMAC déterministe). |

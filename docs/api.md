@@ -1,23 +1,26 @@
 # API — référence des endpoints
 
-Dernière mise à jour : 16 septembre 2026
+Dernière mise à jour : 18 septembre 2026
 
 Base URL : `http://<host>:3000`. Corps en JSON (UTF-8).
 
 ## Authentification
 
-Trois modes selon le groupe de routes :
+Il n'existe qu'une seule logique d'authentification : **tout consommateur est un
+module** (plugin Hytale, site Laravel, bot Discord, backoffice). Deux modes
+selon la méthode HTTP :
 
-| Groupe | En-têtes requis |
+| Méthode | En-têtes requis |
 |---|---|
-| `/health` | aucun |
-| `/api/v1/admin/*` | `X-Admin-Token: <ADMIN_TOKEN>` |
-| `/api/v1/*` (module, GET) | `X-Api-Key: <api_key>` |
-| `/api/v1/*` (module, POST/DELETE) | `X-Api-Key`, `X-Timestamp` (Unix secondes), `X-Signature` |
+| `GET` | `X-Api-Key: <api_key>` |
+| `POST` / `DELETE` | `X-Api-Key`, `X-Timestamp` (Unix secondes), `X-Signature` |
 
 `X-Signature` = HMAC-SHA256 en hexadécimal de `"{X-Timestamp}.{corps brut}"`,
 calculé avec le `hmac_secret` du module. Tolérance d'horodatage :
 `HMAC_TOLERANCE_SECS` (défaut 300). Signatures et scopes : voir `docs/scopes.md`.
+
+> `GET /health` est public. Il n'y a plus d'endpoints admin protégés par un
+> token : le backoffice est un module disposant du scope `admin`.
 
 ## Format d'erreur
 
@@ -97,6 +100,9 @@ Toute erreur renvoie un JSON :
 }
 ```
 
+> `hytale_id` est toujours un **filtre de données**, jamais une identité :
+> l'autorisation reste portée par le module authentifié et ses scopes.
+
 ---
 
 ## Public
@@ -110,11 +116,12 @@ Vérifie le service et la base.
 
 ---
 
-## Administration — `X-Admin-Token`
+## Modules — registre
 
-### POST /api/v1/admin/modules
+### POST /api/v1/modules
 
-Enregistre un module. **L'`api_key` et le `hmac_secret` ne sont renvoyés qu'ici, en clair, une seule fois.**
+Enregistre un module. Scope : `modules:write`. **L'`api_key` et le
+`hmac_secret` ne sont renvoyés qu'ici, en clair, une seule fois.**
 
 - **Entrée** :
 
@@ -144,26 +151,30 @@ Enregistre un module. **L'`api_key` et le `hmac_secret` ne sont renvoyés qu'ici
 }
 ```
 
-- **Erreurs** : 400 (`name` vide), 409 (nom déjà pris).
+- **Erreurs** : 400 (`name` vide), 403 (scope manquant), 409 (nom déjà pris).
 
-### GET /api/v1/admin/modules
+### GET /api/v1/modules
 
-Liste les modules (sans secrets).
+Liste les modules (sans secrets). Scope : `modules:read`.
 
-- **Entrée** : aucune.
 - **Sortie 200** : `ModuleView[]`.
 
-### GET /api/v1/admin/modules/{id}
+### GET /api/v1/modules/{id}
 
-Détail d'un module.
+Détail d'un module. Scope : `modules:read`.
 
 - **Entrée** : `id` (UUID, chemin).
-- **Sortie 200** : `ModuleView`.
-- **Erreurs** : 404.
+- **Sortie 200** : `ModuleView`. **Erreurs** : 403, 404.
 
-### POST /api/v1/admin/servers
+---
 
-Enregistre un serveur Hytale.
+## Serveurs Hytale
+
+### POST /api/v1/servers
+
+Enregistre un serveur. Scope : `hytale_servers:write`. Un module non-admin ne peut
+créer que pour lui-même (`module_id` = son id) ; l'admin peut créer pour
+n'importe quel module.
 
 - **Entrée** :
 
@@ -178,48 +189,39 @@ Enregistre un serveur Hytale.
 | `url` | string | oui |
 
 - **Sortie 201** : `HytaleServerView`.
-- **Erreurs** : 400 (champ vide), 409 (nom déjà pris pour ce module).
+- **Erreurs** : 400 (champ vide), 403, 409 (nom déjà pris pour ce module).
 
-### GET /api/v1/admin/servers
+### GET /api/v1/servers
 
-Liste paginée des serveurs.
+Liste paginée des serveurs. Scope : `hytale_servers:read`. La lecture est
+**globale** : tout module avec le scope voit tous les serveurs.
 
 - **Entrée** (query) :
 
 | Param | Type | Défaut | Note |
 |---|---|---|---|
-| `module_id` | UUID | — | filtre |
+| `module_id` | UUID | — | filtre optionnel par module propriétaire |
 | `limit` | int | 50 | borné 1–200 |
 | `offset` | int | 0 | ≥ 0 |
 
-- **Sortie 200** : `Page<HytaleServerView>`.
+- **Sortie 200** : `Page<HytaleServerView>`. **Erreurs** : 403.
 
-### GET /api/v1/admin/servers/{id}
+### GET /api/v1/servers/{id}
 
-- **Entrée** : `id` (UUID). **Sortie 200** : `HytaleServerView`. **Erreur** : 404.
+Scope : `hytale_servers:read`. Lecture globale.
 
-### DELETE /api/v1/admin/servers/{id}
+- **Sortie 200** : `HytaleServerView`. **Erreurs** : 403, 404.
 
-Suppression logique (`deleted_at`).
+### DELETE /api/v1/servers/{id}
 
-- **Entrée** : `id` (UUID). **Sortie 204** (vide). **Erreur** : 404.
+Suppression logique (`deleted_at`). Scope : `hytale_servers:write`. Ownership requis
+(sauf admin).
 
-### POST /api/v1/admin/whitelists
-
-Ajoute une entrée de whitelist.
-
-- **Entrée** : `{ "hytale_server_id": "UUID", "hytale_id": "UUID" }`.
-- **Sortie 201** : `WhitelistView`. Idempotent : renvoie l'entrée active si elle existe.
-
-### DELETE /api/v1/admin/whitelists/{id}
-
-Suppression logique.
-
-- **Entrée** : `id` (UUID). **Sortie 204** (vide). **Erreur** : 404.
+- **Sortie 204** (vide). **Erreurs** : 403, 404.
 
 ---
 
-## Module — lecture (`X-Api-Key`)
+## Sessions joueur — lecture
 
 ### GET /api/v1/sessions
 
@@ -234,24 +236,39 @@ Liste paginée des sessions. Scope : `player_sessions:read`.
 | `limit` | int | 50 | borné 1–200 |
 | `offset` | int | 0 | ≥ 0 |
 
-- **Sortie 200** : `Page<PlayerSessionView>`.
-- **Erreurs** : 401, 403 (scope manquant).
+- **Sortie 200** : `Page<PlayerSessionView>`. **Erreurs** : 401, 403.
+
+### GET /api/v1/players/{hytale_id}/sessions
+
+Sessions d'un joueur, éventuellement filtrées par serveur. Scope :
+`player_sessions:read`. Utilisé par le site Laravel et le bot Discord.
+
+- **Entrée** (chemin + query) : `hytale_id` (chemin), puis `hytale_server_id`,
+  `limit`, `offset`.
+- **Sortie 200** : `Page<PlayerSessionView>`. **Erreurs** : 401, 403.
+
+---
+
+## Whitelist
 
 ### GET /api/v1/whitelists
 
 Liste paginée de la whitelist. Scope : `whitelist:read`.
 
-- **Entrée** (query) : `hytale_server_id`, `hytale_id`, `limit`, `offset` (idem ci-dessus).
-- **Sortie 200** : `Page<WhitelistView>`.
-- **Erreurs** : 401, 403.
+- **Entrée** (query) : `hytale_server_id`, `hytale_id`, `limit`, `offset`.
+- **Sortie 200** : `Page<WhitelistView>`. **Erreurs** : 401, 403.
 
----
+### GET /api/v1/players/{hytale_id}/whitelists
 
-## Module — écriture (`X-Api-Key` + HMAC)
+Whitelist d'un joueur, éventuellement filtrée par serveur. Scope :
+`whitelist:read`.
+
+- **Sortie 200** : `Page<WhitelistView>`. **Erreurs** : 401, 403.
 
 ### POST /api/v1/whitelists
 
-Ajoute une entrée. Scopes : `whitelist:write`. Le serveur doit appartenir au module.
+Ajoute une entrée. Scope : `whitelist:write`. Le serveur doit appartenir au
+module (sauf admin).
 
 - **Entrée** : `{ "hytale_server_id": "UUID", "hytale_id": "UUID" }`.
 - **Sortie 201** : `WhitelistView`. Idempotent.
@@ -259,15 +276,20 @@ Ajoute une entrée. Scopes : `whitelist:write`. Le serveur doit appartenir au mo
 
 ### DELETE /api/v1/whitelists/{id}
 
-Suppression logique. Scope : `whitelist:write`. L'entrée doit dépendre d'un serveur du module.
+Suppression logique. Scope : `whitelist:write`. L'entrée doit dépendre d'un
+serveur du module (sauf admin).
 
 - **Entrée** : `id` (UUID, chemin).
-- **Sortie 204** (vide).
-- **Erreurs** : 401, 403, 404.
+- **Sortie 204** (vide). **Erreurs** : 401, 403, 404.
+
+---
+
+## Ingestion — webhook
 
 ### POST /api/v1/webhook
 
-Ingestion d'événements. Scope : `player_sessions:write`. Le serveur doit appartenir au module.
+Ingestion d'événements. Scope : `player_sessions:write`. Le serveur doit
+appartenir au module (sauf admin).
 
 - **Entrée** — variantes (discriminant `event_type`) :
 
@@ -311,6 +333,25 @@ SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$HMAC_SECRET" -
 
 curl -X POST http://localhost:3000/api/v1/webhook \
   -H "x-api-key: $API_KEY" \
+  -H "x-timestamp: $TS" \
+  -H "x-signature: $SIG" \
+  -H 'content-type: application/json' \
+  -d "$BODY"
+```
+
+### Amorçage du premier module (backoffice)
+
+Au démarrage, si `SEED_ADMIN_API_KEY` et `SEED_ADMIN_HMAC_SECRET` sont définis et
+qu'aucun module nommé `admin` n'existe, le core le crée avec tous les scopes.
+Ensuite, créer les autres modules avec un `curl` signé :
+
+```bash
+BODY='{"name":"siteweb","scopes":["hytale_servers:read","player_sessions:read","whitelist:read","whitelist:write"]}'
+TS=$(date +%s)
+SIG=$(printf '%s.%s' "$TS" "$BODY" | openssl dgst -sha256 -hmac "$SEED_ADMIN_HMAC_SECRET" -hex | awk '{print $2}')
+
+curl -X POST http://localhost:3000/api/v1/modules \
+  -H "x-api-key: $SEED_ADMIN_API_KEY" \
   -H "x-timestamp: $TS" \
   -H "x-signature: $SIG" \
   -H 'content-type: application/json' \
