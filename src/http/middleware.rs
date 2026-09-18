@@ -7,7 +7,7 @@ use axum::response::Response;
 use chrono::Utc;
 
 use crate::domains::modules::repo;
-use crate::error::AppError;
+use crate::error::{AppError, messages};
 use crate::shared::hmac;
 use crate::shared::identity::Principal;
 use crate::state::AppState;
@@ -16,15 +16,15 @@ const HEADER_API_KEY: &str = "x-api-key";
 const HEADER_TIMESTAMP: &str = "x-timestamp";
 const HEADER_SIGNATURE: &str = "x-signature";
 
-/// Authentifie un module via API key + signature HMAC du corps de requête.
+/// Authenticates a module through API key + HMAC signature of the request body.
 ///
-/// En-têtes attendus :
-/// - `X-Api-Key` : la clé du module.
-/// - `X-Timestamp` : horodatage Unix (secondes) de la requête.
-/// - `X-Signature` : HMAC-SHA256 hex de `"{timestamp}.{body}"`.
+/// Expected headers:
+/// - `X-Api-Key`: the module key.
+/// - `X-Timestamp`: Unix timestamp (seconds) of the request.
+/// - `X-Signature`: HMAC-SHA256 hex of `"{timestamp}.{body}"`.
 ///
-/// Les lectures (`GET`) n'exigent que l'API key ; les écritures exigent en plus
-/// une signature HMAC valide et un horodatage dans la tolérance configurée.
+/// Reads (`GET`) only require the API key; writes also require a valid HMAC
+/// signature and a timestamp within the configured tolerance.
 pub async fn module_auth(
     State(state): State<AppState>,
     mut request: Request,
@@ -48,7 +48,7 @@ pub async fn module_auth(
     let (parts, body) = request.into_parts();
     let bytes = axum::body::to_bytes(body, state.config.max_body_bytes)
         .await
-        .map_err(|_| AppError::BadRequest("corps de requête illisible".into()))?;
+        .map_err(|_| AppError::BadRequest(messages::BODY_UNREADABLE.into()))?;
 
     let api_key = parts
         .headers

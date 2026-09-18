@@ -8,7 +8,7 @@ use super::model::{PlayerSessionRow, PlayerSessionView};
 use super::repo;
 use crate::domains::servers::service as servers_service;
 
-/// Démarre une session après vérification de l'ownership du serveur.
+/// Starts a session after checking server ownership.
 pub async fn start(
     pool: &sqlx::PgPool,
     principal: &Principal,
@@ -20,7 +20,7 @@ pub async fn start(
     repo::start(pool, Uuid::now_v7(), hytale_server_id, hytale_id, joined_at).await
 }
 
-/// Clôt la session ouverte d'un joueur (ownership vérifié).
+/// Ends a player's open session (ownership checked).
 pub async fn end(
     pool: &sqlx::PgPool,
     principal: &Principal,
@@ -31,7 +31,7 @@ pub async fn end(
     repo::end(pool, hytale_server_id, hytale_id).await
 }
 
-/// Liste paginée des sessions (filtres optionnels).
+/// Paginated list of sessions (optional filters).
 pub async fn list(
     pool: &sqlx::PgPool,
     hytale_server_id: Option<Uuid>,
@@ -49,48 +49,18 @@ pub async fn list(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domains::modules::model::CreateModuleRequest;
-    use crate::domains::servers::model::CreateServerRequest;
-    use crate::domains::servers::service as servers;
     use crate::shared::scopes;
-    use crate::testutil::test_crypto;
+    use crate::testutil::fixtures;
+    use crate::testutil::{seed_principal, seed_server};
 
-    async fn seed_principal(pool: &sqlx::PgPool, name: &str) -> Principal {
-        let response = crate::domains::modules::service::create(
-            pool,
-            &test_crypto(),
-            CreateModuleRequest {
-                name: name.into(),
-                description: None,
-                scopes: vec![
-                    scopes::PLAYER_SESSIONS_READ.to_string(),
-                    scopes::PLAYER_SESSIONS_WRITE.to_string(),
-                ],
-            },
-        )
-        .await
-        .unwrap();
-        Principal {
-            id: response.id,
-            name: response.name,
-            scopes: response.scopes,
-        }
+    fn session_scopes() -> [&'static str; 2] {
+        [scopes::PLAYER_SESSIONS_READ, scopes::PLAYER_SESSIONS_WRITE]
     }
 
     #[sqlx::test]
     async fn lifecycle_is_idempotent(pool: sqlx::PgPool) {
-        let principal = seed_principal(&pool, "m").await;
-        let server = servers::create(
-            &pool,
-            &principal,
-            CreateServerRequest {
-                module_id: principal.id,
-                name: "srv".into(),
-                url: "https://s".into(),
-            },
-        )
-        .await
-        .unwrap();
+        let principal = seed_principal(&pool, fixtures::MODULE, &session_scopes()).await;
+        let server = seed_server(&pool, &principal).await;
         let player = Uuid::now_v7();
         let now = Utc::now();
 
@@ -114,18 +84,8 @@ mod tests {
 
     #[sqlx::test]
     async fn session_can_be_restarted_after_end(pool: sqlx::PgPool) {
-        let principal = seed_principal(&pool, "m").await;
-        let server = servers::create(
-            &pool,
-            &principal,
-            CreateServerRequest {
-                module_id: principal.id,
-                name: "srv".into(),
-                url: "https://s".into(),
-            },
-        )
-        .await
-        .unwrap();
+        let principal = seed_principal(&pool, fixtures::MODULE, &session_scopes()).await;
+        let server = seed_server(&pool, &principal).await;
         let player = Uuid::now_v7();
         let now = Utc::now();
 
@@ -137,7 +97,7 @@ mod tests {
             .await
             .unwrap();
 
-        assert_ne!(first.id, second.id, "une nouvelle session est créée");
+        assert_ne!(first.id, second.id, "a new session is created");
         let (_, total) = list(&pool, Some(server.id), Some(player), 50, 0)
             .await
             .unwrap();
@@ -146,19 +106,9 @@ mod tests {
 
     #[sqlx::test]
     async fn cannot_start_session_on_foreign_server(pool: sqlx::PgPool) {
-        let owner = seed_principal(&pool, "owner").await;
-        let other = seed_principal(&pool, "other").await;
-        let server = servers::create(
-            &pool,
-            &owner,
-            CreateServerRequest {
-                module_id: owner.id,
-                name: "srv".into(),
-                url: "https://s".into(),
-            },
-        )
-        .await
-        .unwrap();
+        let owner = seed_principal(&pool, fixtures::OWNER, &session_scopes()).await;
+        let other = seed_principal(&pool, fixtures::OTHER, &session_scopes()).await;
+        let server = seed_server(&pool, &owner).await;
 
         let err = start(&pool, &other, server.id, Uuid::now_v7(), Utc::now())
             .await

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-/// Serveur Hytale géré par un module.
+/// Hytale server managed by a module.
 #[derive(Debug, Clone, FromRow)]
 pub struct HytaleServerRow {
     pub id: Uuid,
@@ -44,7 +44,7 @@ pub struct CreateServerRequest {
     pub url: String,
 }
 
-/// Paramètres de pagination des serveurs.
+/// Pagination parameters for servers.
 #[derive(Debug, Deserialize)]
 pub struct ServerQuery {
     #[serde(default)]

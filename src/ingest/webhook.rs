@@ -7,24 +7,24 @@ use uuid::Uuid;
 
 use crate::error::AppResult;
 use crate::shared::identity::Principal;
-use crate::shared::scopes;
+use crate::shared::{logs, scopes};
 use crate::state::AppState;
 
 use crate::domains::sessions::service as sessions;
 
-/// Événement d'ingestion envoyé par un module. Le core route vers le domaine
-/// métier selon la variante et vérifie le scope correspondant.
+/// Ingestion event sent by a module. The core routes to the matching business
+/// domain based on the variant and checks the required scope.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "event_type", rename_all = "snake_case")]
 pub enum WebhookEvent {
-    /// Le joueur vient d'entrer dans le monde.
+    /// The player just entered the world.
     SessionStarted {
         hytale_server_id: Uuid,
         hytale_id: Uuid,
         #[serde(default)]
         joined_at: Option<DateTime<Utc>>,
     },
-    /// Le joueur a quitté le monde.
+    /// The player left the world.
     SessionEnded {
         hytale_server_id: Uuid,
         hytale_id: Uuid,
@@ -32,7 +32,7 @@ pub enum WebhookEvent {
 }
 
 impl WebhookEvent {
-    /// Scope requis pour traiter l'événement.
+    /// Scope required to handle the event.
     pub fn required_scope(&self) -> &'static str {
         match self {
             WebhookEvent::SessionStarted { .. } | WebhookEvent::SessionEnded { .. } => {
@@ -42,10 +42,10 @@ impl WebhookEvent {
     }
 }
 
-/// `POST /api/v1/webhook` — réception d'un événement depuis un module authentifié.
+/// `POST /api/v1/webhook` - receives an event from an authenticated module.
 ///
-/// La requête est déjà validée par le middleware `module_auth` (API key + HMAC).
-/// L'événement est ensuite routé vers le service du domaine concerné.
+/// The request is already validated by the `module_auth` middleware (API key +
+/// HMAC). The event is then routed to the relevant domain service.
 pub async fn receive(
     State(state): State<AppState>,
     principal: Principal,
@@ -73,7 +73,8 @@ pub async fn receive(
                 session_id = %row.id,
                 module = %principal.name,
                 hytale_id = %hytale_id,
-                "session démarrée"
+                "{}",
+                logs::SESSION_STARTED
             );
 
             Ok((
@@ -94,7 +95,8 @@ pub async fn receive(
                 module = %principal.name,
                 hytale_id = %hytale_id,
                 closed,
-                "session terminée"
+                "{}",
+                logs::SESSION_ENDED
             );
 
             Ok((

@@ -1,5 +1,5 @@
-//! Tests d'intégration HTTP : montent le routeur réel et vérifient
-//! l'authentification, les scopes, le périmètre et les statuts de bout en bout.
+//! HTTP integration tests: they mount the real router and check
+//! authentication, scopes, ownership and statuses end to end.
 
 use axum::Router;
 use axum::body::{Body, to_bytes};
@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::http::router;
 use crate::shared::scopes;
-use crate::testutil::{register_module, sign, test_state};
+use crate::testutil::{Credentials, fixtures, register_module, sign, test_state};
 
 fn now() -> i64 {
     chrono::Utc::now().timestamp()
@@ -18,6 +18,29 @@ fn now() -> i64 {
 
 fn router_for(pool: &PgPool) -> Router {
     router::build(test_state(pool.clone()))
+}
+
+/// JSON body creating a server owned by `module_id`.
+fn server_body(module_id: Uuid) -> serde_json::Value {
+    serde_json::json!({
+        "module_id": module_id,
+        "name": fixtures::SERVER_NAME,
+        "url": fixtures::SERVER_URL,
+    })
+}
+
+/// Creates a server over HTTP for `creds` and returns its id.
+async fn create_server(pool: &PgPool, creds: &Credentials) -> String {
+    let request = signed_request(
+        "POST",
+        "/api/v1/servers",
+        &creds.api_key,
+        &creds.hmac_secret,
+        Some(server_body(creds.id)),
+    );
+    let (status, body) = send(router_for(pool), request).await;
+    assert_eq!(status, StatusCode::CREATED);
+    body["id"].as_str().unwrap().to_string()
 }
 
 fn json_request(method: &str, uri: &str, body: Option<serde_json::Value>) -> Request<Body> {
@@ -31,7 +54,7 @@ fn json_request(method: &str, uri: &str, body: Option<serde_json::Value>) -> Req
     }
 }
 
-/// Requête `GET` authentifiée par API key.
+/// `GET` request authenticated by API key.
 fn get_with_key(uri: &str, api_key: &str) -> Request<Body> {
     Request::builder()
         .method("GET")
@@ -41,7 +64,7 @@ fn get_with_key(uri: &str, api_key: &str) -> Request<Body> {
         .unwrap()
 }
 
-/// Requête signée HMAC (POST/DELETE).
+/// HMAC-signed request (POST/DELETE).
 fn signed_request(
     method: &str,
     uri: &str,
@@ -66,7 +89,7 @@ fn signed_request(
         .unwrap()
 }
 
-/// Envoie une requête et renvoie statut + corps JSON.
+/// Sends a request and returns status + JSON body.
 async fn send(app: Router, request: Request<Body>) -> (StatusCode, serde_json::Value) {
     let response = app.oneshot(request).await.unwrap();
     let status = response.status();
@@ -104,7 +127,7 @@ async fn unknown_api_key_is_unauthorized(pool: PgPool) {
 
 #[sqlx::test]
 async fn get_with_key_requires_no_hmac(pool: PgPool) {
-    let creds = register_module(&pool, "reader", &[scopes::HYTALE_SERVERS_READ]).await;
+    let creds = register_module(&pool, fixtures::READER, &[scopes::HYTALE_SERVERS_READ]).await;
 
     let (status, body) = send(
         router_for(&pool),
@@ -117,8 +140,8 @@ async fn get_with_key_requires_no_hmac(pool: PgPool) {
 
 #[sqlx::test]
 async fn missing_scope_is_forbidden(pool: PgPool) {
-    // Module sans `hytale_servers:read`.
-    let creds = register_module(&pool, "no-scope", &[]).await;
+    // Module without `hytale_servers:read`.
+    let creds = register_module(&pool, fixtures::NO_SCOPE, &[]).await;
 
     let (status, _) = send(
         router_for(&pool),
@@ -130,12 +153,8 @@ async fn missing_scope_is_forbidden(pool: PgPool) {
 
 #[sqlx::test]
 async fn write_without_hmac_is_unauthorized(pool: PgPool) {
-    let creds = register_module(&pool, "writer", &[scopes::HYTALE_SERVERS_WRITE]).await;
-    let body = serde_json::json!({
-        "module_id": creds.id,
-        "name": "survie",
-        "url": "https://s",
-    });
+    let creds = register_module(&pool, fixtures::WRITER, &[scopes::HYTALE_SERVERS_WRITE]).await;
+    let body = server_body(creds.id);
 
     // POST avec API key seulement, sans signature.
     let request = Request::builder()
@@ -152,13 +171,8 @@ async fn write_without_hmac_is_unauthorized(pool: PgPool) {
 
 #[sqlx::test]
 async fn write_with_invalid_signature_is_unauthorized(pool: PgPool) {
-    let creds = register_module(&pool, "writer", &[scopes::HYTALE_SERVERS_WRITE]).await;
-    let body = serde_json::to_vec(&serde_json::json!({
-        "module_id": creds.id,
-        "name": "survie",
-        "url": "https://s",
-    }))
-    .unwrap();
+    let creds = register_module(&pool, fixtures::WRITER, &[scopes::HYTALE_SERVERS_WRITE]).await;
+    let body = serde_json::to_vec(&server_body(creds.id)).unwrap();
 
     let request = Request::builder()
         .method("POST")
@@ -176,12 +190,8 @@ async fn write_with_invalid_signature_is_unauthorized(pool: PgPool) {
 
 #[sqlx::test]
 async fn create_server_with_valid_signature_succeeds(pool: PgPool) {
-    let creds = register_module(&pool, "writer", &[scopes::HYTALE_SERVERS_WRITE]).await;
-    let body = serde_json::json!({
-        "module_id": creds.id,
-        "name": "survie",
-        "url": "https://s",
-    });
+    let creds = register_module(&pool, fixtures::WRITER, &[scopes::HYTALE_SERVERS_WRITE]).await;
+    let body = server_body(creds.id);
 
     let request = signed_request(
         "POST",
@@ -193,31 +203,18 @@ async fn create_server_with_valid_signature_succeeds(pool: PgPool) {
 
     let (status, response) = send(router_for(&pool), request).await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(response["name"], "survie");
+    assert_eq!(response["name"], fixtures::SERVER_NAME);
     assert_eq!(response["module_id"], creds.id.to_string());
 }
 
 #[sqlx::test]
 async fn all_modules_can_list_all_servers(pool: PgPool) {
-    let owner = register_module(&pool, "owner", &[scopes::HYTALE_SERVERS_WRITE]).await;
-    let reader = register_module(&pool, "reader", &[scopes::HYTALE_SERVERS_READ]).await;
+    let owner = register_module(&pool, fixtures::OWNER, &[scopes::HYTALE_SERVERS_WRITE]).await;
+    let reader = register_module(&pool, fixtures::READER, &[scopes::HYTALE_SERVERS_READ]).await;
 
-    let create = signed_request(
-        "POST",
-        "/api/v1/servers",
-        &owner.api_key,
-        &owner.hmac_secret,
-        Some(serde_json::json!({
-            "module_id": owner.id,
-            "name": "survie",
-            "url": "https://s",
-        })),
-    );
-    let (created_status, created) = send(router_for(&pool), create).await;
-    assert_eq!(created_status, StatusCode::CREATED);
-    let server_id = created["id"].as_str().unwrap();
+    let server_id = create_server(&pool, &owner).await;
 
-    // Un autre module voit le serveur.
+    // Another module sees the server.
     let (status, body) = send(
         router_for(&pool),
         get_with_key("/api/v1/servers", &reader.api_key),
@@ -237,29 +234,17 @@ async fn all_modules_can_list_all_servers(pool: PgPool) {
 
 #[sqlx::test]
 async fn module_cannot_write_foreign_server(pool: PgPool) {
-    let owner = register_module(&pool, "owner", &[scopes::HYTALE_SERVERS_WRITE]).await;
+    let owner = register_module(&pool, fixtures::OWNER, &[scopes::HYTALE_SERVERS_WRITE]).await;
     let intruder = register_module(
         &pool,
-        "intruder",
+        fixtures::INTRUDER,
         &[scopes::HYTALE_SERVERS_WRITE, scopes::WHITELIST_WRITE],
     )
     .await;
 
-    let create = signed_request(
-        "POST",
-        "/api/v1/servers",
-        &owner.api_key,
-        &owner.hmac_secret,
-        Some(serde_json::json!({
-            "module_id": owner.id,
-            "name": "survie",
-            "url": "https://s",
-        })),
-    );
-    let (_, created) = send(router_for(&pool), create).await;
-    let server_id = created["id"].as_str().unwrap();
+    let server_id = create_server(&pool, &owner).await;
 
-    // L'intrus tente de whitelister sur un serveur qui ne lui appartient pas.
+    // The intruder tries to whitelist on a server it does not own.
     let attempt = signed_request(
         "POST",
         "/api/v1/whitelists",
@@ -278,7 +263,7 @@ async fn module_cannot_write_foreign_server(pool: PgPool) {
 async fn player_centric_route_filters_by_hytale_id(pool: PgPool) {
     let creds = register_module(
         &pool,
-        "webhook",
+        fixtures::WEBHOOK,
         &[
             scopes::PLAYER_SESSIONS_WRITE,
             scopes::PLAYER_SESSIONS_READ,
@@ -287,19 +272,7 @@ async fn player_centric_route_filters_by_hytale_id(pool: PgPool) {
     )
     .await;
 
-    let create = signed_request(
-        "POST",
-        "/api/v1/servers",
-        &creds.api_key,
-        &creds.hmac_secret,
-        Some(serde_json::json!({
-            "module_id": creds.id,
-            "name": "survie",
-            "url": "https://s",
-        })),
-    );
-    let (_, server) = send(router_for(&pool), create).await;
-    let server_id = server["id"].as_str().unwrap();
+    let server_id = create_server(&pool, &creds).await;
 
     let player_a = Uuid::now_v7();
     let player_b = Uuid::now_v7();
@@ -319,7 +292,7 @@ async fn player_centric_route_filters_by_hytale_id(pool: PgPool) {
         assert_eq!(status, StatusCode::ACCEPTED);
     }
 
-    // Vue player-centric : uniquement les sessions du joueur A.
+    // Player-centric view: only player A's sessions.
     let (status, body) = send(
         router_for(&pool),
         get_with_key(
@@ -332,7 +305,7 @@ async fn player_centric_route_filters_by_hytale_id(pool: PgPool) {
     assert_eq!(body["total"], 1);
     assert_eq!(body["items"][0]["hytale_id"], player_a.to_string());
 
-    // Filtre par serveur sur la vue globale.
+    // Server filter on the global view.
     let (status, body) = send(
         router_for(&pool),
         get_with_key(
@@ -347,31 +320,36 @@ async fn player_centric_route_filters_by_hytale_id(pool: PgPool) {
 
 #[sqlx::test]
 async fn webhook_rejects_unknown_event_type(pool: PgPool) {
-    let creds = register_module(&pool, "webhook", &[scopes::PLAYER_SESSIONS_WRITE]).await;
+    let creds = register_module(&pool, fixtures::WEBHOOK, &[scopes::PLAYER_SESSIONS_WRITE]).await;
     let request = signed_request(
         "POST",
         "/api/v1/webhook",
         &creds.api_key,
         &creds.hmac_secret,
         Some(serde_json::json!({
-            "event_type": "inconnu",
+            "event_type": "unknown_event",
             "hytale_server_id": Uuid::now_v7(),
             "hytale_id": Uuid::now_v7(),
         })),
     );
 
-    // Le body est invalide : Axum renvoie une erreur client avant le handler.
+    // The body is invalid: Axum returns a client error before the handler.
     let response = router_for(&pool).oneshot(request).await.unwrap();
     assert!(response.status().is_client_error());
 }
 
 #[sqlx::test]
 async fn admin_can_create_module_and_others_cannot(pool: PgPool) {
-    let admin = register_module(&pool, "admin", &[scopes::MODULES_WRITE, scopes::ADMIN]).await;
-    let regular = register_module(&pool, "regular", &[]).await;
+    let admin = register_module(
+        &pool,
+        fixtures::ADMIN,
+        &[scopes::MODULES_WRITE, scopes::ADMIN],
+    )
+    .await;
+    let regular = register_module(&pool, fixtures::REGULAR, &[]).await;
 
     let body = serde_json::json!({
-        "name": "siteweb",
+        "name": fixtures::SITE_MODULE,
         "scopes": [scopes::HYTALE_SERVERS_READ],
     });
 
@@ -390,7 +368,7 @@ async fn admin_can_create_module_and_others_cannot(pool: PgPool) {
         "/api/v1/modules",
         &regular.api_key,
         &regular.hmac_secret,
-        Some(serde_json::json!({ "name": "autre", "scopes": [] })),
+        Some(serde_json::json!({ "name": fixtures::OTHER, "scopes": [] })),
     );
     let (status, _) = send(router_for(&pool), denied).await;
     assert_eq!(status, StatusCode::FORBIDDEN);
@@ -398,13 +376,8 @@ async fn admin_can_create_module_and_others_cannot(pool: PgPool) {
 
 #[sqlx::test]
 async fn expired_timestamp_is_unauthorized(pool: PgPool) {
-    let creds = register_module(&pool, "writer", &[scopes::HYTALE_SERVERS_WRITE]).await;
-    let body = serde_json::to_vec(&serde_json::json!({
-        "module_id": creds.id,
-        "name": "survie",
-        "url": "https://s",
-    }))
-    .unwrap();
+    let creds = register_module(&pool, fixtures::WRITER, &[scopes::HYTALE_SERVERS_WRITE]).await;
+    let body = serde_json::to_vec(&server_body(creds.id)).unwrap();
 
     let stale = (now() - 10_000).to_string();
     let signature = sign(&creds.hmac_secret, &stale, &body);

@@ -1,8 +1,8 @@
-//! Domaine d'orchestration (à venir).
+//! Orchestration domain (coming soon).
 //!
-//! Objectif : mettre à jour les serveurs Hytale (récupérer la dernière version
-//! publiée, planifier et suivre les mises à jour).
+//! Goal: update Hytale servers (fetch the latest published version, schedule
+//! and track updates).
 //!
-//! Contrainte de conception : les appels réseau sortants ne doivent **jamais**
-//! bloquer une requête HTTP. Ils passeront par une table `outbox`/`jobs` et un
-//! worker. Le seed et les tests arriveront avec l'implémentation réelle.
+//! Design constraint: outbound network calls must **never** block an HTTP
+//! request. They will go through an `outbox`/`jobs` table and a worker. The
+//! seed and tests will land with the real implementation.

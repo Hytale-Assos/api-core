@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-/// Module enregistré auprès du core (website, plugin Hytale, bot Discord...).
+/// Module registered with the core (website, Hytale plugin, Discord bot...).
 #[derive(Debug, Clone, FromRow)]
 pub struct ModuleRow {
     pub id: Uuid,
@@ -15,7 +15,7 @@ pub struct ModuleRow {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Vue publique d'un module : jamais de secret exposé.
+/// Public view of a module: never exposes a secret.
 #[derive(Debug, Serialize)]
 pub struct ModuleView {
     pub id: Uuid,
@@ -41,7 +41,7 @@ impl ModuleView {
     }
 }
 
-/// Corps de requête pour créer un module. Le core génère l'API key et le secret HMAC.
+/// Request body to create a module. The core generates the API key and HMAC secret.
 #[derive(Debug, Deserialize)]
 pub struct CreateModuleRequest {
     pub name: String,
@@ -51,8 +51,8 @@ pub struct CreateModuleRequest {
     pub scopes: Vec<String>,
 }
 
-/// Réponse renvoyée à la création d'un module : contient les secrets en clair,
-/// une seule fois, pour transmission à l'admin du module.
+/// Response returned on module creation: contains the secrets in the clear,
+/// once, for transmission to the module owner.
 #[derive(Debug, Serialize)]
 pub struct CreateModuleResponse {
     pub id: Uuid,

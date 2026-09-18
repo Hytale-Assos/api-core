@@ -7,15 +7,15 @@ use uuid::Uuid;
 use crate::error::AppResult;
 use crate::shared::identity::Principal;
 use crate::shared::pagination::{Page, normalize};
-use crate::shared::scopes;
+use crate::shared::{logs, scopes};
 use crate::state::AppState;
 
 use super::model::{CreateWhitelistRequest, WhitelistQuery};
 use super::service;
 
-/// `GET /api/v1/whitelists` — liste paginée de la whitelist.
+/// `GET /api/v1/whitelists` - paginated list of the whitelist.
 ///
-/// Scope requis : `whitelist:read`.
+/// Required scope: `whitelist:read`.
 pub async fn list(
     State(state): State<AppState>,
     principal: Principal,
@@ -41,9 +41,9 @@ pub async fn list(
     }))
 }
 
-/// `GET /api/v1/players/{hytale_id}/whitelists` — whitelist d'un joueur.
+/// `GET /api/v1/players/{hytale_id}/whitelists` - a player's whitelist.
 ///
-/// Scope requis : `whitelist:read`.
+/// Required scope: `whitelist:read`.
 pub async fn list_for_player(
     State(state): State<AppState>,
     principal: Principal,
@@ -70,9 +70,9 @@ pub async fn list_for_player(
     }))
 }
 
-/// `POST /api/v1/whitelists` — ajoute une entrée de whitelist.
+/// `POST /api/v1/whitelists` - adds a whitelist entry.
 ///
-/// Scope requis : `whitelist:write`. Le serveur doit appartenir au module.
+/// Required scope: `whitelist:write`. The server must belong to the module.
 pub async fn create(
     State(state): State<AppState>,
     principal: Principal,
@@ -86,15 +86,16 @@ pub async fn create(
         whitelist_id = %entry.id,
         module = %principal.name,
         hytale_id = %entry.hytale_id,
-        "entrée de whitelist ajoutée"
+        "{}",
+        logs::WHITELIST_ENTRY_ADDED
     );
 
     Ok((StatusCode::CREATED, Json(entry)))
 }
 
-/// `DELETE /api/v1/whitelists/{id}` — suppression logique.
+/// `DELETE /api/v1/whitelists/{id}` - soft delete.
 ///
-/// Scope requis : `whitelist:write`.
+/// Required scope: `whitelist:write`.
 pub async fn delete(
     State(state): State<AppState>,
     principal: Principal,
@@ -107,7 +108,8 @@ pub async fn delete(
     tracing::info!(
         whitelist_id = %id,
         module = %principal.name,
-        "entrée de whitelist supprimée"
+        "{}",
+        logs::WHITELIST_ENTRY_DELETED
     );
 
     Ok(StatusCode::NO_CONTENT)

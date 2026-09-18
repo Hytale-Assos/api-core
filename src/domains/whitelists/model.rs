@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-/// Entrée de whitelist d'un joueur pour un serveur.
+/// Whitelist entry of a player for a server.
 #[derive(Debug, Clone, FromRow)]
 pub struct WhitelistRow {
     pub id: Uuid,
@@ -40,7 +40,7 @@ pub struct CreateWhitelistRequest {
     pub hytale_id: Uuid,
 }
 
-/// Paramètres de pagination/filtrage de la whitelist.
+/// Pagination/filter parameters for the whitelist.
 #[derive(Debug, Deserialize)]
 pub struct WhitelistQuery {
     #[serde(default)]

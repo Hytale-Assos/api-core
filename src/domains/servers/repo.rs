@@ -38,7 +38,7 @@ pub async fn fetch_by_id(pool: &sqlx::PgPool, id: Uuid) -> AppResult<HytaleServe
     .ok_or(AppError::NotFound)
 }
 
-/// Indique si un serveur existe et appartient bien au module fourni.
+/// Tells whether a server exists and indeed belongs to the given module.
 pub async fn is_owned_by(pool: &sqlx::PgPool, server_id: Uuid, module_id: Uuid) -> AppResult<bool> {
     let owned = sqlx::query_scalar::<_, bool>(
         "SELECT EXISTS(

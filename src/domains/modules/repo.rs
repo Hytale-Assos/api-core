@@ -8,7 +8,7 @@ use crate::shared::map_unique_violation;
 
 use super::model::ModuleRow;
 
-/// Récupère un module actif par sa clé API (via l'index déterministe).
+/// Fetches an active module by its API key (through the deterministic index).
 pub async fn fetch_by_api_key(
     pool: &sqlx::PgPool,
     crypto: &Crypto,
@@ -26,7 +26,7 @@ pub async fn fetch_by_api_key(
     .ok_or(AppError::Unauthorized)
 }
 
-/// Récupère un module (y compris désactivé) par son identifiant.
+/// Fetches a module by its id (including disabled ones).
 pub async fn fetch_by_id(pool: &sqlx::PgPool, id: Uuid) -> AppResult<ModuleRow> {
     sqlx::query_as::<_, ModuleRow>(
         "SELECT id, name, description, hmac_secret, is_enabled, created_at, updated_at
@@ -39,7 +39,7 @@ pub async fn fetch_by_id(pool: &sqlx::PgPool, id: Uuid) -> AppResult<ModuleRow> 
     .ok_or(AppError::NotFound)
 }
 
-/// Récupère un module par son nom (y compris désactivé).
+/// Fetches a module by its name (including disabled ones).
 pub async fn fetch_by_name(pool: &sqlx::PgPool, name: &str) -> AppResult<Option<ModuleRow>> {
     let row = sqlx::query_as::<_, ModuleRow>(
         "SELECT id, name, description, hmac_secret, is_enabled, created_at, updated_at
@@ -52,7 +52,7 @@ pub async fn fetch_by_name(pool: &sqlx::PgPool, name: &str) -> AppResult<Option<
     Ok(row)
 }
 
-/// Liste les scopes attachés à un module.
+/// Lists the scopes attached to a module.
 pub async fn fetch_scopes(pool: &sqlx::PgPool, module_id: Uuid) -> AppResult<Vec<String>> {
     let scopes = sqlx::query_scalar::<_, String>(
         "SELECT scope FROM module_scopes WHERE module_id = $1 ORDER BY scope",
@@ -63,7 +63,7 @@ pub async fn fetch_scopes(pool: &sqlx::PgPool, module_id: Uuid) -> AppResult<Vec
     Ok(scopes)
 }
 
-/// Liste les scopes pour un ensemble de modules (évite le N+1).
+/// Lists scopes for a set of modules (avoids the N+1).
 async fn fetch_scopes_for(
     pool: &sqlx::PgPool,
     module_ids: &[Uuid],
@@ -88,7 +88,7 @@ async fn fetch_scopes_for(
     Ok(map)
 }
 
-/// Insère un module et ses scopes en chiffrant ses secrets.
+/// Inserts a module and its scopes, encrypting its secrets.
 #[allow(clippy::too_many_arguments)]
 pub async fn insert(
     pool: &sqlx::PgPool,
@@ -133,7 +133,7 @@ pub async fn insert(
     Ok((row, scopes))
 }
 
-/// Liste tous les modules avec leurs scopes.
+/// Lists all modules with their scopes.
 pub async fn list(pool: &sqlx::PgPool) -> AppResult<Vec<(ModuleRow, Vec<String>)>> {
     let rows = sqlx::query_as::<_, ModuleRow>(
         "SELECT id, name, description, hmac_secret, is_enabled, created_at, updated_at

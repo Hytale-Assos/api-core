@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-/// Session de connexion d'un joueur à un serveur.
+/// Player connection session to a server.
 #[derive(Debug, Clone, FromRow)]
 pub struct PlayerSessionRow {
     pub id: Uuid,
@@ -40,7 +40,7 @@ impl From<PlayerSessionRow> for PlayerSessionView {
     }
 }
 
-/// Paramètres de pagination/filtrage des sessions.
+/// Pagination/filter parameters for sessions.
 #[derive(Debug, Deserialize)]
 pub struct SessionQuery {
     #[serde(default)]

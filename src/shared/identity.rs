@@ -2,10 +2,10 @@ use uuid::Uuid;
 
 use crate::error::{AppError, AppResult};
 
-/// Identité du module authentifié, injectée dans les handlers.
+/// Identity of the authenticated module, injected into handlers.
 ///
-/// Vit dans `shared` (et non dans `http`) pour que la couche `service` puisse
-/// raisonner sur les scopes et l'ownership sans dépendre d'Axum.
+/// Lives in `shared` (not `http`) so the `service` layer can reason about scopes
+/// and ownership without depending on Axum.
 #[derive(Debug, Clone)]
 pub struct Principal {
     pub id: Uuid,
@@ -14,17 +14,17 @@ pub struct Principal {
 }
 
 impl Principal {
-    /// Indique si le module possède le scope demandé.
+    /// Tells whether the module holds the requested scope.
     pub fn has_scope(&self, scope: &str) -> bool {
         self.scopes.iter().any(|s| s == scope)
     }
 
-    /// Vrai si le module est le backoffice (scope `admin`).
+    /// True if the module is the backoffice (scope `admin`).
     pub fn is_admin(&self) -> bool {
         self.has_scope(crate::shared::scopes::ADMIN)
     }
 
-    /// Vérifie un scope et renvoie `403 Forbidden` sinon.
+    /// Checks a scope and returns `403 Forbidden` otherwise.
     pub fn require(&self, scope: &str) -> AppResult<()> {
         if self.has_scope(scope) {
             Ok(())

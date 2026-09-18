@@ -4,7 +4,7 @@ use crate::error::AppResult;
 
 use super::model::PlayerSessionRow;
 
-/// Ouvre une session. Idempotent : réutilise la session ouverte s'il en existe une.
+/// Opens a session. Idempotent: reuses the open session if one exists.
 pub async fn start(
     pool: &sqlx::PgPool,
     id: Uuid,
@@ -50,7 +50,7 @@ pub async fn fetch_open(
     Ok(row)
 }
 
-/// Clôt la session ouverte d'un joueur. Renvoie `false` si aucune session ouverte.
+/// Ends a player's open session. Returns `false` if none is open.
 pub async fn end(pool: &sqlx::PgPool, hytale_server_id: Uuid, hytale_id: Uuid) -> AppResult<bool> {
     let result = sqlx::query(
         "UPDATE player_sessions SET ended_at = now()

@@ -5,7 +5,7 @@ use crate::shared::map_unique_violation;
 
 use super::model::WhitelistRow;
 
-/// Ajoute une entrée de whitelist. Idempotent : renvoie l'entrée active si elle existe.
+/// Adds a whitelist entry. Idempotent: returns the active entry if it exists.
 pub async fn insert(
     pool: &sqlx::PgPool,
     id: Uuid,
@@ -51,7 +51,7 @@ pub async fn fetch_active(
     Ok(row)
 }
 
-/// Indique si une entrée appartient à un serveur du module fourni.
+/// Tells whether an entry belongs to a server of the given module.
 pub async fn is_owned_by(
     pool: &sqlx::PgPool,
     whitelist_id: Uuid,

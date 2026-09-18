@@ -2,14 +2,14 @@ use rand::RngCore;
 use uuid::Uuid;
 
 use crate::crypto::Crypto;
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, messages};
 
 use crate::shared::scopes;
 
 use super::model::{CreateModuleRequest, CreateModuleResponse, ModuleRow, ModuleView};
 use super::repo;
 
-/// Enregistre un nouveau module en générant ses credentials.
+/// Registers a new module, generating its credentials.
 pub async fn create(
     pool: &sqlx::PgPool,
     crypto: &Crypto,
@@ -17,7 +17,7 @@ pub async fn create(
 ) -> AppResult<CreateModuleResponse> {
     let name = request.name.trim();
     if name.is_empty() {
-        return Err(AppError::BadRequest("name est requis".into()));
+        return Err(AppError::BadRequest(messages::MODULE_NAME_REQUIRED.into()));
     }
 
     let (api_key, hmac_secret) = generate_credentials();
@@ -44,7 +44,7 @@ pub async fn create(
     })
 }
 
-/// Liste les modules avec leurs scopes, sans jamais exposer les secrets.
+/// Lists modules with their scopes, never exposing secrets.
 pub async fn list(pool: &sqlx::PgPool) -> AppResult<Vec<ModuleView>> {
     let rows = repo::list(pool).await?;
     Ok(rows
@@ -53,17 +53,17 @@ pub async fn list(pool: &sqlx::PgPool) -> AppResult<Vec<ModuleView>> {
         .collect())
 }
 
-/// Détail d'un module.
+/// Details of a module.
 pub async fn get(pool: &sqlx::PgPool, id: Uuid) -> AppResult<ModuleView> {
     let row = repo::fetch_by_id(pool, id).await?;
     let scopes = repo::fetch_scopes(pool, id).await?;
     Ok(ModuleView::from_row(row, scopes))
 }
 
-/// Crée le module `admin` s'il n'existe pas encore, à partir de l'environnement.
+/// Creates the `admin` module from configuration if it does not exist yet.
 ///
-/// Idempotent : ne fait rien si un module nommé `admin` existe déjà. Renvoie le
-/// module créé le cas échéant, pour permettre sa journalisation.
+/// Idempotent: does nothing if a module with that name already exists. Returns
+/// the created module when applicable, so it can be logged.
 pub async fn seed_admin(
     pool: &sqlx::PgPool,
     crypto: &Crypto,
@@ -81,7 +81,7 @@ pub async fn seed_admin(
         crypto,
         Uuid::now_v7(),
         name,
-        Some("module backoffice initialisé au démarrage"),
+        Some("backoffice module initialized at startup"),
         api_key,
         hmac_secret,
         &scopes,
@@ -91,7 +91,7 @@ pub async fn seed_admin(
     Ok(Some(row))
 }
 
-/// Génère une API key et un secret HMAC aléatoires (32 octets chacun, hex).
+/// Generates a random API key and HMAC secret (32 bytes each, hex).
 fn generate_credentials() -> (String, String) {
     let mut api_key_bytes = [0u8; 32];
     let mut secret_bytes = [0u8; 32];
@@ -112,7 +112,7 @@ mod tests {
             &pool,
             &crypto,
             CreateModuleRequest {
-                name: "plugin".into(),
+                name: crate::testutil::fixtures::PLUGIN.into(),
                 description: Some("desc".into()),
                 scopes: vec![scopes::PLAYER_SESSIONS_READ.to_string()],
             },
@@ -137,7 +137,7 @@ mod tests {
             &pool,
             &crypto,
             CreateModuleRequest {
-                name: "plugin".into(),
+                name: crate::testutil::fixtures::PLUGIN.into(),
                 description: None,
                 scopes: vec![],
             },
@@ -152,7 +152,7 @@ mod tests {
             .unwrap();
         assert_ne!(
             stored, response.hmac_secret,
-            "le secret ne doit pas être en clair"
+            "the secret must not be in the clear"
         );
         assert_eq!(crypto.decrypt_str(&stored).unwrap(), response.hmac_secret);
     }
@@ -204,17 +204,32 @@ mod tests {
     async fn seed_admin_is_idempotent(pool: sqlx::PgPool) {
         let crypto = test_crypto();
 
-        let created = seed_admin(&pool, &crypto, "admin", "key", "secret")
-            .await
-            .unwrap();
+        let created = seed_admin(
+            &pool,
+            &crypto,
+            crate::testutil::fixtures::ADMIN,
+            "key",
+            "secret",
+        )
+        .await
+        .unwrap();
         assert!(created.is_some());
 
-        let again = seed_admin(&pool, &crypto, "admin", "key", "secret")
-            .await
-            .unwrap();
-        assert!(again.is_none(), "le seed ne doit pas recréer le module");
+        let again = seed_admin(
+            &pool,
+            &crypto,
+            crate::testutil::fixtures::ADMIN,
+            "key",
+            "secret",
+        )
+        .await
+        .unwrap();
+        assert!(again.is_none(), "the seed must not recreate the module");
 
-        let module = repo::fetch_by_name(&pool, "admin").await.unwrap().unwrap();
+        let module = repo::fetch_by_name(&pool, crate::testutil::fixtures::ADMIN)
+            .await
+            .unwrap()
+            .unwrap();
         let granted = repo::fetch_scopes(&pool, module.id).await.unwrap();
         assert!(granted.contains(&scopes::ADMIN.to_string()));
     }

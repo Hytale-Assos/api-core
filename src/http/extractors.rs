@@ -4,9 +4,9 @@ use axum::http::request::Parts;
 use crate::error::AppError;
 use crate::shared::identity::Principal;
 
-/// Extrait le [`Principal`] inséré par le middleware `module_auth`.
+/// Extracts the [`Principal`] inserted by the `module_auth` middleware.
 ///
-/// Implémente `FromRequestParts` pour permettre l'injection directe comme
+/// Implements `FromRequestParts` to allow direct injection as
 /// argument de handler : `principal: Principal`.
 impl<S> FromRequestParts<S> for Principal
 where

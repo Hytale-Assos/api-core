@@ -6,16 +6,16 @@ use uuid::Uuid;
 
 use crate::error::AppResult;
 use crate::shared::identity::Principal;
-use crate::shared::scopes;
+use crate::shared::{logs, scopes};
 use crate::state::AppState;
 
 use super::model::{CreateModuleRequest, ModuleView};
 use super::service;
 
-/// `POST /api/v1/modules` — enregistre un nouveau module.
+/// `POST /api/v1/modules` - registers a new module.
 ///
-/// Scope requis : `modules:write`. Les credentials sont renvoyés en clair une
-/// seule fois.
+/// Required scope: `modules:write`. Credentials are returned in the clear
+/// only once.
 pub async fn create(
     State(state): State<AppState>,
     principal: Principal,
@@ -25,14 +25,19 @@ pub async fn create(
 
     let response = service::create(&state.db, &state.crypto, body).await?;
 
-    tracing::info!(module_id = %response.id, name = %response.name, "module enregistré");
+    tracing::info!(
+        module_id = %response.id,
+        name = %response.name,
+        "{}",
+        logs::MODULE_REGISTERED
+    );
 
     Ok((StatusCode::CREATED, Json(response)))
 }
 
-/// `GET /api/v1/modules` — liste les modules (sans secrets).
+/// `GET /api/v1/modules` - lists modules (without secrets).
 ///
-/// Scope requis : `modules:read`.
+/// Required scope: `modules:read`.
 pub async fn list(
     State(state): State<AppState>,
     principal: Principal,
@@ -43,9 +48,9 @@ pub async fn list(
     Ok(Json(modules))
 }
 
-/// `GET /api/v1/modules/{id}` — détail d'un module.
+/// `GET /api/v1/modules/{id}` - details of a module.
 ///
-/// Scope requis : `modules:read`.
+/// Required scope: `modules:read`.
 pub async fn get_one(
     State(state): State<AppState>,
     principal: Principal,

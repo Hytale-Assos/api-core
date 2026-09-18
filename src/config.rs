@@ -2,10 +2,10 @@ use std::env;
 
 use anyhow::{Context, Result};
 
-/// Configuration du module `admin` créé au démarrage si absent.
+/// Configuration for the `admin` module created at startup when absent.
 ///
-/// Facultative : sans elle, aucun module n'est seedé et il faut passer par la
-/// base ou un seed manuel pour amorcer le registre.
+/// Optional: without it, no module is seeded and the registry must be
+/// bootstrapped through the database or a manual seed.
 #[derive(Clone, Debug)]
 pub struct SeedAdminConfig {
     pub name: String,
@@ -29,10 +29,10 @@ impl Config {
         let bind_addr = env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:3000".to_string());
 
         let database_url =
-            env::var("DATABASE_URL").context("variable d'environnement DATABASE_URL manquante")?;
+            env::var("DATABASE_URL").context("DATABASE_URL environment variable is missing")?;
 
         let encryption_key = env::var("ENCRYPTION_KEY")
-            .context("variable d'environnement ENCRYPTION_KEY manquante (base64, 32 octets)")?;
+            .context("ENCRYPTION_KEY environment variable is missing (base64, 32 bytes)")?;
 
         let seed_admin = seed_admin_from_env()?;
 
@@ -40,14 +40,14 @@ impl Config {
             .ok()
             .map(|v| v.parse())
             .transpose()
-            .context("MAX_BODY_BYTES invalide")?
+            .context("MAX_BODY_BYTES is invalid")?
             .unwrap_or(1_048_576);
 
         let hmac_tolerance_secs = env::var("HMAC_TOLERANCE_SECS")
             .ok()
             .map(|v| v.parse())
             .transpose()
-            .context("HMAC_TOLERANCE_SECS invalide")?
+            .context("HMAC_TOLERANCE_SECS is invalid")?
             .unwrap_or(300);
 
         let cors_allowed_origins = env::var("CORS_ALLOWED_ORIGINS")
@@ -69,9 +69,9 @@ impl Config {
     }
 }
 
-/// Lit `SEED_ADMIN_API_KEY` / `SEED_ADMIN_HMAC_SECRET` (et optionnellement
-/// `SEED_ADMIN_NAME`, défaut `admin`). Renvoie `None` si les deux secrets ne
-/// sont pas fournis.
+/// Reads `SEED_ADMIN_API_KEY` / `SEED_ADMIN_HMAC_SECRET` (and optionally
+/// `SEED_ADMIN_NAME`, default `admin`). Returns `None` if both secrets are not
+/// provided.
 fn seed_admin_from_env() -> Result<Option<SeedAdminConfig>> {
     let api_key = env::var("SEED_ADMIN_API_KEY")
         .ok()
@@ -93,8 +93,6 @@ fn seed_admin_from_env() -> Result<Option<SeedAdminConfig>> {
             }))
         }
         (None, None) => Ok(None),
-        _ => anyhow::bail!(
-            "SEED_ADMIN_API_KEY et SEED_ADMIN_HMAC_SECRET doivent être définis ensemble"
-        ),
+        _ => anyhow::bail!("SEED_ADMIN_API_KEY and SEED_ADMIN_HMAC_SECRET must be set together"),
     }
 }

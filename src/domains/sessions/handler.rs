@@ -12,9 +12,9 @@ use crate::state::AppState;
 use super::model::SessionQuery;
 use super::service;
 
-/// `GET /api/v1/sessions` — liste paginée des sessions.
+/// `GET /api/v1/sessions` - paginated list of sessions.
 ///
-/// Scope requis : `player_sessions:read`.
+/// Required scope: `player_sessions:read`.
 pub async fn list(
     State(state): State<AppState>,
     principal: Principal,
@@ -40,10 +40,10 @@ pub async fn list(
     }))
 }
 
-/// `GET /api/v1/players/{hytale_id}/sessions` — sessions d'un joueur.
+/// `GET /api/v1/players/{hytale_id}/sessions` - a player's sessions.
 ///
-/// Scope requis : `player_sessions:read`. Le `hytale_id` du chemin est un filtre
-/// de données, jamais une identité : l'autorisation reste portée par le module.
+/// Required scope: `player_sessions:read`. Le `hytale_id` du chemin est un filtre
+/// filter, never an identity: authorization stays carried by the module.
 pub async fn list_for_player(
     State(state): State<AppState>,
     principal: Principal,

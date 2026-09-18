@@ -20,6 +20,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::config::Config;
 use crate::crypto::Crypto;
+use crate::shared::logs;
 use crate::state::AppState;
 
 #[tokio::main]
@@ -28,23 +29,23 @@ async fn main() -> Result<()> {
 
     init_tracing();
 
-    let config = Config::from_env().context("configuration invalide")?;
+    let config = Config::from_env().context("invalid configuration")?;
     let crypto = Crypto::from_base64(&config.encryption_key)?;
 
     let db = sqlx::postgres::PgPoolOptions::new()
         .max_connections(10)
         .connect(&config.database_url)
         .await
-        .context("connexion à PostgreSQL impossible")?;
+        .context("could not connect to PostgreSQL")?;
 
     sqlx::migrate!("./migrations")
         .run(&db)
         .await
-        .context("exécution des migrations impossible")?;
+        .context("could not run migrations")?;
 
     seed_admin(&db, &crypto, &config).await?;
 
-    let bind_addr: SocketAddr = config.bind_addr.parse().context("BIND_ADDR invalide")?;
+    let bind_addr: SocketAddr = config.bind_addr.parse().context("BIND_ADDR is invalid")?;
 
     let state = AppState {
         db,
@@ -56,27 +57,24 @@ async fn main() -> Result<()> {
 
     let listener = TcpListener::bind(bind_addr)
         .await
-        .context("impossible de lier l'adresse d'écoute")?;
+        .context("could not bind the listen address")?;
 
-    tracing::info!(%bind_addr, "api-core démarrée");
+    tracing::info!(%bind_addr, "{}", logs::API_CORE_STARTED);
 
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .await
-    .context("erreur du serveur HTTP")?;
+    .context("HTTP server error")?;
 
     Ok(())
 }
 
-/// Crée le module `admin` au démarrage si la configuration de seed le permet.
+/// Creates the `admin` module at startup when the seed configuration allows it.
 async fn seed_admin(db: &sqlx::PgPool, crypto: &Crypto, config: &Config) -> Result<()> {
     let Some(seed) = &config.seed_admin else {
-        tracing::warn!(
-            "seed admin absent (SEED_ADMIN_API_KEY / SEED_ADMIN_HMAC_SECRET) : \
-             aucun module créé automatiquement"
-        );
+        tracing::warn!("{}", logs::SEED_DISABLED);
         return Ok(());
     };
 
@@ -89,11 +87,14 @@ async fn seed_admin(db: &sqlx::PgPool, crypto: &Crypto, config: &Config) -> Resu
     )
     .await
     {
-        Ok(Some(row)) => {
-            tracing::info!(module_id = %row.id, name = %row.name, "module admin seedé")
-        }
-        Ok(None) => tracing::info!(name = %seed.name, "module admin déjà présent"),
-        Err(err) => tracing::error!(error = %err, "échec du seed admin"),
+        Ok(Some(row)) => tracing::info!(
+            module_id = %row.id,
+            name = %row.name,
+            "{}",
+            logs::ADMIN_SEEDED
+        ),
+        Ok(None) => tracing::info!(name = %seed.name, "{}", logs::ADMIN_ALREADY_PRESENT),
+        Err(err) => tracing::error!(error = %err, "{}", logs::ADMIN_SEED_FAILED),
     }
 
     Ok(())

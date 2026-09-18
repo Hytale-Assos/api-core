@@ -13,9 +13,9 @@ use crate::state::AppState;
 use super::model::{CreateServerRequest, HytaleServerView, ServerQuery};
 use super::service;
 
-/// `POST /api/v1/servers` — enregistre un serveur Hytale.
+/// `POST /api/v1/servers` - registers a Hytale server.
 ///
-/// Scope requis : `servers:write`.
+/// Required scope: `hytale_servers:write`.
 pub async fn create(
     State(state): State<AppState>,
     principal: Principal,
@@ -27,10 +27,10 @@ pub async fn create(
     Ok((StatusCode::CREATED, Json(server)))
 }
 
-/// `GET /api/v1/servers` — liste paginée des serveurs.
+/// `GET /api/v1/servers` - paginated list of servers.
 ///
-/// Scope requis : `hytale_servers:read`. La lecture est globale (tous les
-/// serveurs), avec filtre optionnel `module_id`.
+/// Required scope: `hytale_servers:read`. Reads are global (all servers),
+/// with an optional `module_id` filter.
 pub async fn list(
     State(state): State<AppState>,
     principal: Principal,
@@ -49,9 +49,9 @@ pub async fn list(
     }))
 }
 
-/// `GET /api/v1/servers/{id}` — détail d'un serveur.
+/// `GET /api/v1/servers/{id}` - details of a server.
 ///
-/// Scope requis : `hytale_servers:read`.
+/// Required scope: `hytale_servers:read`.
 pub async fn get_one(
     State(state): State<AppState>,
     principal: Principal,
@@ -63,9 +63,9 @@ pub async fn get_one(
     Ok(Json(server))
 }
 
-/// `DELETE /api/v1/servers/{id}` — suppression logique.
+/// `DELETE /api/v1/servers/{id}` - soft delete.
 ///
-/// Scope requis : `hytale_servers:write`. Ownership requis (sauf admin).
+/// Required scope: `hytale_servers:write`. Ownership required (except admin).
 pub async fn delete(
     State(state): State<AppState>,
     principal: Principal,

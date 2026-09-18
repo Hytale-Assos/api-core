@@ -12,13 +12,13 @@ use crate::state::AppState;
 
 /// Construit le routeur principal de l'API.
 ///
-/// Une seule logique d'authentification : tous les endpoints métier exigent un
-/// module (API key + HMAC pour les écritures) et un scope. Le backoffice est un
-/// module disposant du scope `admin`. Seul `/health` reste public.
+/// A single authentication model: every business endpoint requires a module
+/// (API key + HMAC for writes) and a scope. The backoffice is a module holding
+/// the `admin` scope. Only `/health` stays public.
 pub fn build(state: AppState) -> Router {
     let public_routes = Router::new().route("/health", get(health::health));
 
-    // Registre des modules (backoffice via scope `modules:*`).
+    // Module registry (backoffice via `modules:*` scope).
     let module_registry = Router::new()
         .route(
             "/api/v1/modules",
@@ -26,7 +26,7 @@ pub fn build(state: AppState) -> Router {
         )
         .route("/api/v1/modules/{id}", get(modules::handler::get_one));
 
-    // Serveurs Hytale (lecture globale, écriture selon ownership/admin).
+    // Hytale servers (global read, writes according to ownership/admin).
     let server_routes = Router::new()
         .route(
             "/api/v1/servers",
@@ -37,7 +37,7 @@ pub fn build(state: AppState) -> Router {
             get(servers::handler::get_one).delete(servers::handler::delete),
         );
 
-    // Sessions joueur (lecture par module, + vues player-centric).
+    // Player sessions (per-module reads, plus player-centric views).
     let session_routes = Router::new()
         .route("/api/v1/sessions", get(sessions::handler::list))
         .route(
@@ -45,7 +45,7 @@ pub fn build(state: AppState) -> Router {
             get(sessions::handler::list_for_player),
         );
 
-    // Whitelist (lecture/écriture par module, + vue player-centric).
+    // Whitelist (per-module read/write, plus player-centric view).
     let whitelist_routes = Router::new()
         .route(
             "/api/v1/whitelists",
@@ -60,7 +60,7 @@ pub fn build(state: AppState) -> Router {
             get(whitelists::handler::list_for_player),
         );
 
-    // Ingestion d'événements.
+    // Event ingestion.
     let webhook_routes = Router::new().route("/api/v1/webhook", post(webhook::receive));
 
     let protected = Router::new()

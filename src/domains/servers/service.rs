@@ -1,15 +1,15 @@
 use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, messages};
 use crate::shared::identity::Principal;
 
 use super::model::{CreateServerRequest, HytaleServerView};
 use super::repo;
 
-/// Enregistre un serveur Hytale.
+/// Registers a Hytale server.
 ///
-/// Le scope `admin` permet de créer un serveur pour n'importe quel module, ce
-/// qui serait refusé à un module normal (il ne peut créer que pour lui-même).
+/// The `admin` scope allows creating a server for any module, which would be
+/// denied to a regular module (it may only create for itself).
 pub async fn create(
     pool: &sqlx::PgPool,
     principal: &Principal,
@@ -18,7 +18,9 @@ pub async fn create(
     let name = request.name.trim();
     let url = request.url.trim();
     if name.is_empty() || url.is_empty() {
-        return Err(AppError::BadRequest("name et url sont requis".into()));
+        return Err(AppError::BadRequest(
+            messages::SERVER_NAME_AND_URL_REQUIRED.into(),
+        ));
     }
 
     if !principal.is_admin() && principal.id != request.module_id {
@@ -30,10 +32,10 @@ pub async fn create(
     Ok(HytaleServerView::from(row))
 }
 
-/// Liste paginée des serveurs.
+/// Paginated list of servers.
 ///
-/// La lecture est globale : tout module disposant de `hytale_servers:read` voit
-/// l'ensemble des serveurs. Seules les écritures sont restreintes à l'ownership.
+/// Reads are global: any module holding `hytale_servers:read` sees all servers.
+/// Only writes are restricted to ownership.
 pub async fn list(
     pool: &sqlx::PgPool,
     module_id: Option<Uuid>,
@@ -47,20 +49,20 @@ pub async fn list(
     ))
 }
 
-/// Détail d'un serveur (lecture globale).
+/// Details of a server (global read).
 pub async fn get(pool: &sqlx::PgPool, id: Uuid) -> AppResult<HytaleServerView> {
     let row = repo::fetch_by_id(pool, id).await?;
     Ok(HytaleServerView::from(row))
 }
 
-/// Vérifie qu'un serveur appartient au principal, sauf pour l'admin.
+/// Asserts a server belongs to the principal, except for admin.
 pub async fn assert_owned(
     pool: &sqlx::PgPool,
     principal: &Principal,
     server_id: Uuid,
 ) -> AppResult<()> {
     if principal.is_admin() {
-        // L'admin peut opérer sur n'importe quel serveur existant.
+        // Admin may operate on any existing server.
         repo::fetch_by_id(pool, server_id).await?;
         return Ok(());
     }
@@ -72,7 +74,7 @@ pub async fn assert_owned(
     }
 }
 
-/// Suppression logique d'un serveur (ownership ou admin requis).
+/// Soft delete of a server (ownership or admin required).
 pub async fn delete(pool: &sqlx::PgPool, principal: &Principal, id: Uuid) -> AppResult<()> {
     let row = repo::fetch_by_id(pool, id).await?;
     if !principal.is_admin() && row.module_id != principal.id {
@@ -84,58 +86,33 @@ pub async fn delete(pool: &sqlx::PgPool, principal: &Principal, id: Uuid) -> App
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domains::modules::model::CreateModuleRequest;
     use crate::shared::identity::Principal;
-    use crate::testutil::test_crypto;
+    use crate::testutil::fixtures;
+    use crate::testutil::{seed_principal, seed_server, server_request};
 
-    async fn seed_principal(pool: &sqlx::PgPool, name: &str, admin: bool) -> Principal {
-        let response = crate::domains::modules::service::create(
-            pool,
-            &test_crypto(),
-            CreateModuleRequest {
-                name: name.into(),
-                description: None,
-                scopes: if admin {
-                    vec![crate::shared::scopes::ADMIN.to_string()]
-                } else {
-                    vec![crate::shared::scopes::HYTALE_SERVERS_READ.to_string()]
-                },
-            },
-        )
-        .await
-        .unwrap();
-
-        Principal {
-            id: response.id,
-            name: response.name,
-            scopes: response.scopes,
-        }
+    async fn principal(pool: &sqlx::PgPool, name: &str, admin: bool) -> Principal {
+        let scopes = if admin {
+            [crate::shared::scopes::ADMIN]
+        } else {
+            [crate::shared::scopes::HYTALE_SERVERS_READ]
+        };
+        seed_principal(pool, name, &scopes).await
     }
 
     #[sqlx::test]
     async fn any_module_with_read_scope_sees_all_servers(pool: sqlx::PgPool) {
-        let owner = seed_principal(&pool, "owner", false).await;
-        let other = seed_principal(&pool, "other", false).await;
+        let owner = principal(&pool, fixtures::OWNER, false).await;
+        let other = principal(&pool, fixtures::OTHER, false).await;
 
-        let server = create(
-            &pool,
-            &owner,
-            CreateServerRequest {
-                module_id: owner.id,
-                name: "survie".into(),
-                url: "https://s".into(),
-            },
-        )
-        .await
-        .unwrap();
+        let server = seed_server(&pool, &owner).await;
 
-        // Lecture globale : un autre module voit le serveur et son détail.
+        // Global read: another module sees the server and its details.
         assert!(get(&pool, server.id).await.is_ok());
         let (servers, total) = list(&pool, None, 50, 0).await.unwrap();
         assert_eq!(total, 1);
         assert_eq!(servers.len(), 1);
 
-        // Le filtre `module_id` restreint la liste.
+        // The `module_id` filter narrows the list.
         let (filtered, filtered_total) = list(&pool, Some(other.id), 50, 0).await.unwrap();
         assert_eq!(filtered_total, 0);
         assert!(filtered.is_empty());
@@ -143,17 +120,13 @@ mod tests {
 
     #[sqlx::test]
     async fn module_cannot_create_for_another_module(pool: sqlx::PgPool) {
-        let owner = seed_principal(&pool, "owner", false).await;
-        let other = seed_principal(&pool, "other", false).await;
+        let owner = principal(&pool, fixtures::OWNER, false).await;
+        let other = principal(&pool, fixtures::OTHER, false).await;
 
         let err = create(
             &pool,
             &owner,
-            CreateServerRequest {
-                module_id: other.id,
-                name: "survie".into(),
-                url: "https://s".into(),
-            },
+            server_request(other.id, fixtures::SERVER_NAME, fixtures::SERVER_URL),
         )
         .await
         .unwrap_err();
@@ -162,12 +135,8 @@ mod tests {
 
     #[sqlx::test]
     async fn duplicate_name_is_conflict(pool: sqlx::PgPool) {
-        let owner = seed_principal(&pool, "owner", false).await;
-        let request = || CreateServerRequest {
-            module_id: owner.id,
-            name: "survie".into(),
-            url: "https://s".into(),
-        };
+        let owner = principal(&pool, fixtures::OWNER, false).await;
+        let request = || server_request(owner.id, fixtures::SERVER_NAME, fixtures::SERVER_URL);
 
         create(&pool, &owner, request()).await.unwrap();
         let err = create(&pool, &owner, request()).await.unwrap_err();
@@ -176,15 +145,11 @@ mod tests {
 
     #[sqlx::test]
     async fn soft_deleted_name_can_be_reused(pool: sqlx::PgPool) {
-        let owner = seed_principal(&pool, "owner", false).await;
+        let owner = principal(&pool, fixtures::OWNER, false).await;
         let first = create(
             &pool,
             &owner,
-            CreateServerRequest {
-                module_id: owner.id,
-                name: "survie".into(),
-                url: "https://a".into(),
-            },
+            server_request(owner.id, fixtures::SERVER_NAME, fixtures::SERVER_URL),
         )
         .await
         .unwrap();
@@ -194,21 +159,17 @@ mod tests {
             create(
                 &pool,
                 &owner,
-                CreateServerRequest {
-                    module_id: owner.id,
-                    name: "survie".into(),
-                    url: "https://b".into(),
-                },
+                server_request(owner.id, fixtures::SERVER_NAME, fixtures::SERVER_URL_ALT),
             )
             .await
             .is_ok(),
-            "l'index unique partiel autorise le même nom après suppression"
+            "the partial unique index allows the same name after deletion"
         );
     }
 
     #[sqlx::test]
     async fn deleting_missing_row_is_not_found(pool: sqlx::PgPool) {
-        let admin = seed_principal(&pool, "admin", true).await;
+        let admin = principal(&pool, fixtures::ADMIN, true).await;
         let err = delete(&pool, &admin, Uuid::now_v7()).await.unwrap_err();
         assert!(matches!(err, AppError::NotFound));
     }
