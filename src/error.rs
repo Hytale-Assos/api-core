@@ -1,6 +1,6 @@
+use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::Json;
 use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
@@ -87,7 +87,10 @@ mod tests {
             (AppError::Forbidden, StatusCode::FORBIDDEN),
             (AppError::NotFound, StatusCode::NOT_FOUND),
             (AppError::Conflict("doublon".into()), StatusCode::CONFLICT),
-            (AppError::BadRequest("invalide".into()), StatusCode::BAD_REQUEST),
+            (
+                AppError::BadRequest("invalide".into()),
+                StatusCode::BAD_REQUEST,
+            ),
         ];
 
         for (error, expected) in cases {
@@ -103,8 +106,7 @@ mod tests {
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["error"], "erreur interne du serveur");
 
-        let database =
-            AppError::Database(sqlx::Error::RowNotFound);
+        let database = AppError::Database(sqlx::Error::RowNotFound);
         let (status, body) = status_and_body(database).await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(body["error"], "erreur interne du serveur");

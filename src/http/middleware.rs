@@ -1,20 +1,20 @@
 use axum::body::Body;
 use axum::extract::{Request, State};
-use axum::http::{HeaderMap, Method};
+use axum::http::HeaderMap;
+use axum::http::Method;
 use axum::middleware::Next;
 use axum::response::Response;
 use chrono::Utc;
 
-use crate::auth::hmac;
-use crate::db;
+use crate::domains::modules::repo;
 use crate::error::AppError;
-use crate::models::AuthenticatedModule;
+use crate::shared::hmac;
+use crate::shared::identity::Principal;
 use crate::state::AppState;
 
 const HEADER_API_KEY: &str = "x-api-key";
 const HEADER_TIMESTAMP: &str = "x-timestamp";
 const HEADER_SIGNATURE: &str = "x-signature";
-const HEADER_ADMIN_TOKEN: &str = "x-admin-token";
 
 /// Authentifie un module via API key + signature HMAC du corps de requête.
 ///
@@ -22,6 +22,9 @@ const HEADER_ADMIN_TOKEN: &str = "x-admin-token";
 /// - `X-Api-Key` : la clé du module.
 /// - `X-Timestamp` : horodatage Unix (secondes) de la requête.
 /// - `X-Signature` : HMAC-SHA256 hex de `"{timestamp}.{body}"`.
+///
+/// Les lectures (`GET`) n'exigent que l'API key ; les écritures exigent en plus
+/// une signature HMAC valide et un horodatage dans la tolérance configurée.
 pub async fn module_auth(
     State(state): State<AppState>,
     mut request: Request,
@@ -36,9 +39,7 @@ pub async fn module_auth(
     let timestamp = header_string(&parts, HEADER_TIMESTAMP)?;
 
     let tolerance = state.config.hmac_tolerance_secs;
-    let provided_ts: i64 = timestamp
-        .parse()
-        .map_err(|_| AppError::ExpiredTimestamp)?;
+    let provided_ts: i64 = timestamp.parse().map_err(|_| AppError::ExpiredTimestamp)?;
     let now = Utc::now().timestamp();
     if (now - provided_ts).abs() > tolerance {
         return Err(AppError::ExpiredTimestamp);
@@ -60,7 +61,7 @@ pub async fn module_auth(
         .and_then(|v| v.to_str().ok())
         .ok_or(AppError::InvalidSignature)?;
 
-    let module = db::fetch_module_by_api_key(&state.db, &state.crypto, api_key).await?;
+    let module = repo::fetch_by_api_key(&state.db, &state.crypto, api_key).await?;
 
     if !module.is_enabled {
         return Err(AppError::Forbidden);
@@ -71,14 +72,10 @@ pub async fn module_auth(
         return Err(AppError::InvalidSignature);
     }
 
-    let scopes = db::fetch_module_scopes(&state.db, module.id).await?;
+    let scopes = repo::fetch_scopes(&state.db, module.id).await?;
 
     let mut request = Request::from_parts(parts, Body::from(bytes));
-    request.extensions_mut().insert(AuthenticatedModule {
-        id: module.id,
-        name: module.name,
-        scopes,
-    });
+    insert_principal(&mut request, module.id, module.name, scopes);
 
     Ok(next.run(request).await)
 }
@@ -90,46 +87,22 @@ async fn authenticate_api_key(state: &AppState, request: &mut Request) -> Result
         .and_then(|v| v.to_str().ok())
         .ok_or(AppError::Unauthorized)?;
 
-    let module = db::fetch_module_by_api_key(&state.db, &state.crypto, api_key).await?;
+    let module = repo::fetch_by_api_key(&state.db, &state.crypto, api_key).await?;
 
     if !module.is_enabled {
         return Err(AppError::Forbidden);
     }
 
-    let scopes = db::fetch_module_scopes(&state.db, module.id).await?;
-
-    request.extensions_mut().insert(AuthenticatedModule {
-        id: module.id,
-        name: module.name,
-        scopes,
-    });
+    let scopes = repo::fetch_scopes(&state.db, module.id).await?;
+    insert_principal(request, module.id, module.name, scopes);
 
     Ok(())
 }
 
-/// Authentifie un administrateur via un token statique (`ADMIN_TOKEN`).
-pub async fn admin_auth(
-    State(state): State<AppState>,
-    request: Request,
-    next: Next,
-) -> Result<Response, AppError> {
-    let provided = request
-        .headers()
-        .get(HEADER_ADMIN_TOKEN)
-        .and_then(|v| v.to_str().ok())
-        .ok_or(AppError::Unauthorized)?;
-
-    let expected = state.config.admin_token.as_deref().ok_or_else(|| {
-        AppError::Internal(anyhow::anyhow!(
-            "ADMIN_TOKEN non configuré : endpoints d'administration désactivés"
-        ))
-    })?;
-
-    if !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
-        return Err(AppError::Unauthorized);
-    }
-
-    Ok(next.run(request).await)
+fn insert_principal(request: &mut Request, id: uuid::Uuid, name: String, scopes: Vec<String>) {
+    request
+        .extensions_mut()
+        .insert(Principal { id, name, scopes });
 }
 
 fn header_string(headers: &HeaderMap, name: &str) -> Result<String, AppError> {
@@ -138,11 +111,4 @@ fn header_string(headers: &HeaderMap, name: &str) -> Result<String, AppError> {
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string())
         .ok_or(AppError::Unauthorized)
-}
-
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }

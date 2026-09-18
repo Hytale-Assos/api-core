@@ -38,7 +38,11 @@ mod tests {
 
     #[test]
     fn verify_accepts_matching_signature() {
-        let signature = sign("s3cr3t", "1700000000", br#"{"event_type":"session_started"}"#);
+        let signature = sign(
+            "s3cr3t",
+            "1700000000",
+            br#"{"event_type":"session_started"}"#,
+        );
         assert!(verify(
             "s3cr3t",
             "1700000000",

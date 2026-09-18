@@ -1,7 +1,7 @@
 use aes_gcm::aead::consts::U12;
 use aes_gcm::aead::{Aead, Generate, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
-use base64::prelude::{Engine as _, BASE64_STANDARD};
+use base64::prelude::{BASE64_STANDARD, Engine as _};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
@@ -33,9 +33,9 @@ pub struct Crypto {
 impl Crypto {
     /// Construit le module depuis la clé maître fournie en base64.
     pub fn from_base64(master_key_b64: &str) -> AppResult<Self> {
-        let key = BASE64_STANDARD
-            .decode(master_key_b64.trim())
-            .map_err(|_| AppError::Internal(anyhow::anyhow!("ENCRYPTION_KEY n'est pas du base64")))?;
+        let key = BASE64_STANDARD.decode(master_key_b64.trim()).map_err(|_| {
+            AppError::Internal(anyhow::anyhow!("ENCRYPTION_KEY n'est pas du base64"))
+        })?;
 
         if key.len() != KEY_LEN {
             return Err(AppError::Internal(anyhow::anyhow!(
@@ -170,7 +170,10 @@ mod tests {
         raw[last] ^= 0xff;
         let tampered = BASE64_STANDARD.encode(&raw);
 
-        assert!(c.decrypt_str(&tampered).is_err(), "le tag GCM doit détecter l'altération");
+        assert!(
+            c.decrypt_str(&tampered).is_err(),
+            "le tag GCM doit détecter l'altération"
+        );
     }
 
     #[test]

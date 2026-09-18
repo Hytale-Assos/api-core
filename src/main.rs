@@ -1,12 +1,15 @@
-mod auth;
 mod config;
 mod crypto;
-mod db;
+mod domains;
 mod error;
-mod models;
-mod router;
-mod routes;
+mod http;
+mod ingest;
+mod shared;
 mod state;
+#[cfg(test)]
+mod tests;
+#[cfg(test)]
+mod testutil;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -39,10 +42,9 @@ async fn main() -> Result<()> {
         .await
         .context("exécution des migrations impossible")?;
 
-    let bind_addr: SocketAddr = config
-        .bind_addr
-        .parse()
-        .context("BIND_ADDR invalide")?;
+    seed_admin(&db, &crypto, &config).await?;
+
+    let bind_addr: SocketAddr = config.bind_addr.parse().context("BIND_ADDR invalide")?;
 
     let state = AppState {
         db,
@@ -50,7 +52,7 @@ async fn main() -> Result<()> {
         config: Arc::new(config),
     };
 
-    let app = router::build(state);
+    let app = http::router::build(state);
 
     let listener = TcpListener::bind(bind_addr)
         .await
@@ -64,6 +66,35 @@ async fn main() -> Result<()> {
     )
     .await
     .context("erreur du serveur HTTP")?;
+
+    Ok(())
+}
+
+/// Crée le module `admin` au démarrage si la configuration de seed le permet.
+async fn seed_admin(db: &sqlx::PgPool, crypto: &Crypto, config: &Config) -> Result<()> {
+    let Some(seed) = &config.seed_admin else {
+        tracing::warn!(
+            "seed admin absent (SEED_ADMIN_API_KEY / SEED_ADMIN_HMAC_SECRET) : \
+             aucun module créé automatiquement"
+        );
+        return Ok(());
+    };
+
+    match domains::modules::service::seed_admin(
+        db,
+        crypto,
+        &seed.name,
+        &seed.api_key,
+        &seed.hmac_secret,
+    )
+    .await
+    {
+        Ok(Some(row)) => {
+            tracing::info!(module_id = %row.id, name = %row.name, "module admin seedé")
+        }
+        Ok(None) => tracing::info!(name = %seed.name, "module admin déjà présent"),
+        Err(err) => tracing::error!(error = %err, "échec du seed admin"),
+    }
 
     Ok(())
 }
