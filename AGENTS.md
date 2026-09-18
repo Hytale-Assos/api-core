@@ -67,8 +67,11 @@ Do not add a `Repository` trait (ADR-0006). `sqlx::test` covers DB testing.
 
 ## Workflow
 
-- Language: code comments and docs may be French; commits are **English**,
-  imperative, following [`docs/git-conventions.md`](docs/git-conventions.md).
+- Language: code (including comments) and docs are **English**; commits are
+  **English**, imperative, following
+  [`docs/git-conventions.md`](docs/git-conventions.md).
+- User-facing error messages are centralized in `src/error.rs` (`messages`
+  module). Never inline a literal message at the call site.
 - Before finishing any change, run and make pass:
 
   ```bash

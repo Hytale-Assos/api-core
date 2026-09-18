@@ -49,3 +49,6 @@ Each ADR follows a lightweight variant of the
 | [0010](0010-outbox-for-outbound-effects.md) | Outbox pattern for outbound side effects | Accepted |
 | [0011](0011-rest-over-grpc.md) | REST over gRPC for ingestion | Accepted |
 | [0012](0012-configurable-admin-seed.md) | Configurable, idempotent admin seed | Accepted |
+| [0013](0013-centralized-messages-and-logs.md) | Centralized user-facing messages and logs | Accepted |
+| [0014](0014-english-as-project-language.md) | English as the single project language | Accepted |
+| [0015](0015-shared-test-fixtures.md) | Shared test fixtures and helpers | Accepted |
