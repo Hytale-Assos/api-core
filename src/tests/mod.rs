@@ -1,6 +1,8 @@
 //! HTTP integration tests: they mount the real router and check
 //! authentication, scopes, ownership and statuses end to end.
 
+mod healthcheck;
+
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};

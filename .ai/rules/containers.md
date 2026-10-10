@@ -30,8 +30,13 @@ paths:
   `Cargo.toml`/`Cargo.lock` and build a stub `fn main() {}` first, then copy
   `src/` + `migrations/` and build for real. A dependency change then
   rebuilds only the second pass.
-- The runtime is unprivileged: dedicated non-root user, `USER` directive,
-  unprivileged port (3000), `curl` present only for the healthcheck.
+- The runtime is unprivileged: ubi10-micro (glibc-only userspace, no shell,
+  no package manager, no curl — ADR-0018), fixed non-root `USER` UID,
+  unprivileged port (3000). The binary ships its own probe: the healthcheck
+  runs `api-core healthcheck` (exit 0 = healthy), never curl.
+- The runtime glibc must be at least as new as the build stage's glibc
+  (the binary is dynamically linked). Build on bookworm (2.36), run on
+  EL10 (2.39) is fine; the reverse is not.
 - Defaults live in `ENV`: `BIND_ADDR=0.0.0.0:3000`, `RUST_LOG=info`. Never
   bake secrets or a `.env` into the image; the app reads plain environment
   variables.
@@ -48,7 +53,8 @@ them.
 Before pushing a Containerfile change: build the image, then smoke-test it:
 run the container with a `DATABASE_URL` and `ENCRYPTION_KEY`, check the
 startup logs apply the migrations, hit `/health` for HTTP 200, and confirm
-the process user with `podman exec <container> id`.
+the process user from the host with `podman top <container> user` (the
+runtime image has no `id` binary, `podman exec` is unavailable).
 
 ## Quadlet files
 
@@ -58,9 +64,13 @@ the process user with `podman exec <container> id`.
 - Peer networks linking exactly two containers are named
   `hytale-<container-a>-hytale-<container-b>`:
   `hytale-api-core-hytale-api-core-postgres.network` (app ↔ database),
-  `hytale-website-hytale-api-core.network` (website ↔ core). Never put all
-  services on one shared flat network: each dependency pair gets its own
-  network, and consumers reach the core at `http://hytale-api-core:3000`.
+  `hytale-website-hytale-api-core.network` (website ↔ core),
+  `hytale-server-vanilla-1-hytale-api-core.network` (game server ↔ core).
+  Never put all services on one shared flat network: each dependency pair
+  gets its own network, and consumers reach the core at
+  `http://hytale-api-core:3000`. Each game server gets its own pair
+  network (instance suffix `-1`, `-2`, ...): two game servers must never
+  share a network, or they could reach each other's management agent.
 - Volumes are named after their owning container:
   `hytale-api-core-postgres-data.volume`.
 - Secrets never live in the repo. Sensitive values are Podman secrets

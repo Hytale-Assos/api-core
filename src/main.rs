@@ -13,8 +13,14 @@ mod testutil;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
+use http_body_util::Full;
+use hyper::Request;
+use hyper::body::Bytes;
+use hyper_util::client::legacy::Client;
+use hyper_util::rt::TokioExecutor;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
@@ -26,6 +32,17 @@ use crate::state::AppState;
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
+
+    // Container health probe: the runtime image ships no shell or curl, so the
+    // binary probes its own `/health` endpoint. Exit 0 means healthy.
+    if std::env::args().nth(1).as_deref() == Some("healthcheck") {
+        let bind_addr = std::env::var("BIND_ADDR")
+            .ok()
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "0.0.0.0:3000".to_string());
+        let target = bind_addr.replace("0.0.0.0", "127.0.0.1");
+        std::process::exit(if run_healthcheck(&target).await { 0 } else { 1 });
+    }
 
     init_tracing();
 
@@ -71,6 +88,27 @@ async fn main() -> Result<()> {
     .context("HTTP server error")?;
 
     Ok(())
+}
+
+/// Probes `GET /health` on `target` (host:port). Healthy only on HTTP 200
+/// within a short deadline; any connection error or other status is unhealthy.
+async fn run_healthcheck(target: &str) -> bool {
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    let uri = format!("http://{target}/health");
+    let client: Client<_, Full<Bytes>> = Client::builder(TokioExecutor::new()).build_http();
+
+    let probe = async {
+        let request = Request::builder()
+            .method("GET")
+            .uri(&uri)
+            .header("Accept", "application/json")
+            .body(Full::new(Bytes::new()))?;
+        let response = client.request(request).await?;
+        anyhow::Ok(response.status().as_u16())
+    };
+
+    matches!(tokio::time::timeout(TIMEOUT, probe).await, Ok(Ok(200)))
 }
 
 /// Creates the `admin` module at startup when the seed configuration allows it.

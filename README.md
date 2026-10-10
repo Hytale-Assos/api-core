@@ -11,7 +11,7 @@ authenticated by API key (reads) and HMAC signature (writes).
 ## Stack
 
 - **Rust 2024** / **Axum 0.8** — HTTP server
-- **SQLx 0.9** + **PostgreSQL 17** — data access, migrations applied at startup
+- **SQLx 0.9** + **PostgreSQL 18** — data access, migrations applied at startup
 - **AES-256-GCM** encryption + keyed HMAC hashing at the application layer
 - **Docker Compose** — development database
 - **Podman / Quadlet** — production deployment (`container/`)
@@ -27,7 +27,7 @@ authenticated by API key (reads) and HMAC signature (writes).
 # 1. Copy the environment template and fill in ENCRYPTION_KEY
 cp .env.example .env
 
-# 2. Start the dev database (PostgreSQL 17 on localhost:5433)
+# 2. Start the dev database (PostgreSQL 18 on localhost:5433)
 docker compose up -d
 
 # 3. Run the API (migrations are applied at startup)
