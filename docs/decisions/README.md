@@ -54,3 +54,4 @@ Each ADR follows a lightweight variant of the
 | [0015](0015-shared-test-fixtures.md) | Shared test fixtures and helpers | Accepted |
 | [0016](0016-management-push-to-servers.md) | Pushing management commands to registered servers | Accepted |
 | [0017](0017-containerized-deployment.md) | Containerized deployment with Podman/Quadlet | Accepted |
+| [0018](0018-ubi-micro-runtime.md) | UBI10-micro container runtime | Accepted |
