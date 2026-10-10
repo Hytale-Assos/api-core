@@ -1,7 +1,8 @@
 # Hytale API core (Rust/Axum), unprivileged image.
 # The generated systemd unit is hytale-api-core.service.
 #
-# The image runs as appuser and listens on :3000 (BIND_ADDR default).
+# The image runs as a fixed non-root UID and listens on :3000 (BIND_ADDR
+# default).
 # Application configuration is split in two:
 #   - non-secret values live in the environment file below, created
 #     on the deployment host from container/api-core.env.example;
@@ -51,7 +52,7 @@ Secret=hytale-api-core-encryption-key,type=env,target=ENCRYPTION_KEY
 Secret=hytale-api-core-seed-admin-api-key,type=env,target=SEED_ADMIN_API_KEY
 Secret=hytale-api-core-seed-admin-hmac-secret,type=env,target=SEED_ADMIN_HMAC_SECRET
 EnvironmentFile=/home/hytale/hytale/env/api-core.env
-HealthCmd=curl -fsS http://127.0.0.1:3000/health
+HealthCmd=/usr/local/bin/api-core healthcheck
 HealthInterval=30s
 HealthTimeout=5s
 HealthRetries=3

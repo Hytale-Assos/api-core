@@ -2,7 +2,8 @@
 
 # Image versions, pinned by digest. Bump the tag and the digest together.
 ARG RUST_IMAGE=rust:1.94-slim-bookworm@sha256:cf9dd0ec73e75f827fe59123fff9dc65af1a1c8363c3c31ee8d7f8ad0b6a5fb2
-ARG RUNTIME_IMAGE=debian:bookworm-slim@sha256:7c7b2c966bc9ee8cedfeef67e0e279108992c77681fa595db4a9d65c06ccc587
+ARG CERTS_IMAGE=registry.access.redhat.com/ubi10/ubi-minimal@sha256:09ed9924b6499bcc3ea315db2b35268cdd36537ba42fce61e504c50ff7e7c092
+ARG RUNTIME_IMAGE=registry.access.redhat.com/ubi10/ubi-micro@sha256:31cf3e99560b89a2c26fed1cce0c42f524203b1399b243349da6757b59125ffa
 
 # Release build with the pinned Rust toolchain.
 # Migrations are embedded at compile time by sqlx::migrate!, so the runtime
@@ -25,28 +26,34 @@ COPY migrations ./migrations
 RUN touch src/main.rs \
     && cargo build --release --locked
 
-# Runtime: a single binary plus curl for the healthcheck, unprivileged.
+# Runtime: ubi10-micro (glibc-only userspace, no shell, no package manager,
+# no curl). The binary probes itself via 'api-core healthcheck' (ADR-0018).
+# The build stage runs on Debian bookworm (glibc 2.36) and the runtime on
+# EL10 (glibc 2.39): a binary runs on any glibc >= its build glibc, so never
+# swap the runtime for a base with an OLDER glibc than the build stage.
+# CA certificates are copied from ubi10-minimal for future outbound TLS:
+# today the queue worker delivers over plain HTTP and sqlx embeds its
+# webpki roots, so nothing reads them at runtime yet.
 # Never bake secrets or a .env into the image: the app reads plain
 # environment variables.
+FROM ${CERTS_IMAGE} AS certs
 FROM ${RUNTIME_IMAGE} AS runtime
 
-ARG APP_USER=appuser
+COPY --from=certs /etc/pki /etc/pki
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd --system --create-home ${APP_USER}
+COPY --from=build /build/target/release/api-core /usr/local/bin/api-core
 
-COPY --from=build --chown=${APP_USER}:${APP_USER} /build/target/release/api-core /usr/local/bin/api-core
-
-USER ${APP_USER}
-WORKDIR /home/appuser
+# ubi-micro ships no useradd: run under a fixed non-root UID/GID.
+USER 10001:0
+WORKDIR /tmp
 
 ENV BIND_ADDR=0.0.0.0:3000 \
     RUST_LOG=api_core=info,info
 
 EXPOSE 3000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-    CMD curl -fsS http://127.0.0.1:3000/health || exit 1
+
+# The health probe is wired where the container actually runs:
+# HealthCmd=/usr/local/bin/api-core healthcheck in the Quadlet unit
+# (image-level HEALTHCHECK metadata is dropped on OCI-format bases).
 
 ENTRYPOINT ["/usr/local/bin/api-core"]
