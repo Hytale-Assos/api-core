@@ -43,6 +43,10 @@
 Description=Hytale API core (Rust/Axum)
 Requires=hytale-api-core-postgres.service
 After=hytale-api-core-postgres.service
+# Give up after 5 restarts within a minute (crash loop) instead of
+# looping forever: the unit goes to "failed" and can be inspected.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Container]
 Image=ghcr.io/hytale-assos/api-core:latest
@@ -54,6 +58,8 @@ NoNewPrivileges=true
 DropCapability=ALL
 ReadOnly=true
 Tmpfs=/tmp:rw,mode=1777
+Memory=512M
+CPUs=1
 Secret=hytale-api-core-database-url,type=env,target=DATABASE_URL
 Secret=hytale-api-core-encryption-key,type=env,target=ENCRYPTION_KEY
 Secret=hytale-api-core-seed-admin-api-key,type=env,target=SEED_ADMIN_API_KEY
