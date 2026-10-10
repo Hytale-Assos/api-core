@@ -1,0 +1,17 @@
+.git
+.github
+.idea
+.ai
+.agents
+.vibe
+.githooks
+target
+docs
+container
+scripts
+src/tests
+AGENTS.md
+README.md
+.env
+.env.*
+docker-compose.yml

@@ -1,0 +1,17 @@
+# Peer network between hytale-website and hytale-api-core, so the website's
+# HytaleApiClient reaches the core at http://hytale-api-core:3000 without a
+# shared flat network. The generated systemd unit is
+# hytale-website-hytale-api-core.service.
+#
+# The unit lives here because the core owns its own deployment, but the
+# website's quadlet (in the website repository) must join it:
+#   Network=hytale-website-hytale-api-core.network
+#   HYTALE_API_URL=http://hytale-api-core:3000
+# That edit belongs to the website repository — track it there.
+
+[Network]
+Label=app=hytale
+Label=layer=api
+
+[Install]
+WantedBy=default.target

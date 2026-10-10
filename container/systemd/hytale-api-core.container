@@ -1,0 +1,67 @@
+# Hytale API core (Rust/Axum), unprivileged image.
+# The generated systemd unit is hytale-api-core.service.
+#
+# The image runs as appuser and listens on :3000 (BIND_ADDR default).
+# Application configuration is split in two:
+#   - non-secret values live in the environment file below, created
+#     on the deployment host from container/api-core.env.example;
+#   - sensitive values come from podman secrets, provisioned on the
+#     deployment host (rootless layout, adjust the source paths):
+#       podman secret create hytale-api-core-database-url /home/hytale/hytale/secrets/api_core_database_url
+#       podman secret create hytale-api-core-encryption-key /home/hytale/hytale/secrets/api_core_encryption_key
+#       podman secret create hytale-api-core-seed-admin-api-key /home/hytale/hytale/secrets/api_core_seed_admin_api_key
+#       podman secret create hytale-api-core-seed-admin-hmac-secret /home/hytale/hytale/secrets/api_core_seed_admin_hmac_secret
+#     DATABASE_URL embeds the password, so the whole URL is a secret:
+#       postgres://api_core:<password>@hytale-api-core-postgres:5432/api_core
+#     The seed secrets may hold empty content: an empty SEED_ADMIN_API_KEY
+#     or SEED_ADMIN_HMAC_SECRET disables the startup seed (ADR-0012) and
+#     modules must then be created through the API by an operator.
+#     If a declared secret is missing, systemd fails to start the unit.
+#     Secrets are resolved at container creation: to rotate one, recreate
+#     it and restart the service.
+#
+# Consumers reach the core over the hytale-website-hytale-api-core network
+# at http://hytale-api-core:3000; the host port 3000 is published for the
+# plugin and other external consumers.
+#
+# Hardening: NoNewPrivileges + DropCapability=ALL (the image is already
+# non-root, port > 1024) and a read-only root filesystem. The only writable
+# path is /tmp.
+#
+# Migrations run at startup, embedded in the binary (sqlx::migrate!): pulling
+# a new image is the whole upgrade path, there is no separate migration step.
+
+[Unit]
+Description=Hytale API core (Rust/Axum)
+Requires=hytale-api-core-postgres.service
+After=hytale-api-core-postgres.service
+
+[Container]
+Image=ghcr.io/hytale-assos/api-core:latest
+ContainerName=hytale-api-core
+Network=hytale-api-core-hytale-api-core-postgres.network
+Network=hytale-website-hytale-api-core.network
+PublishPort=3000:3000
+NoNewPrivileges=true
+DropCapability=ALL
+ReadOnly=true
+Tmpfs=/tmp:rw,mode=1777
+Secret=hytale-api-core-database-url,type=env,target=DATABASE_URL
+Secret=hytale-api-core-encryption-key,type=env,target=ENCRYPTION_KEY
+Secret=hytale-api-core-seed-admin-api-key,type=env,target=SEED_ADMIN_API_KEY
+Secret=hytale-api-core-seed-admin-hmac-secret,type=env,target=SEED_ADMIN_HMAC_SECRET
+EnvironmentFile=/home/hytale/hytale/env/api-core.env
+HealthCmd=curl -fsS http://127.0.0.1:3000/health
+HealthInterval=30s
+HealthTimeout=5s
+HealthRetries=3
+HealthStartPeriod=10s
+# podman-auto-update.service can roll this container forward:
+AutoUpdate=registry
+
+[Service]
+Restart=always
+RestartSec=3s
+
+[Install]
+WantedBy=default.target
