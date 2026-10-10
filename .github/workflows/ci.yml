@@ -41,6 +41,9 @@ jobs:
               with:
                   persist-credentials: false
 
+            - name: Install toolchain components
+              run: rustup component add rustfmt clippy
+
             - name: Check formatting
               run: cargo fmt --check
 
