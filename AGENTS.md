@@ -9,7 +9,7 @@ Hytale servers, player sessions, and whitelists for all consumers (plugin,
 Laravel website, Discord bot, orchestration). It is a Rust/Axum + PostgreSQL
 modular monolith.
 
-## Before you change anything — check the ADRs
+## Before you change anything — check the ADRs and the project rules
 
 When you face a decision, **first check whether an ADR already documents it**
 in [`docs/decisions/`](docs/decisions/README.md). ADRs are the source of truth
@@ -24,6 +24,12 @@ layering, transport...).
 
 Significant means: it shapes module boundaries, affects security/ownership/
 data integrity, changes the public API contract, or is expensive to reverse.
+
+Before editing any file, also read the matching rule in
+[`.ai/rules/index.md`](.ai/rules/index.md): it maps path globs to the
+commit, domain, migration, test, and container rules. In particular,
+[`.ai/rules/commits.md`](.ai/rules/commits.md) is the single source of truth
+for branch and commit conventions.
 
 ## Architecture rules (non-negotiable)
 
@@ -43,19 +49,10 @@ data integrity, changes the public API contract, or is expensive to reverse.
 ## Domain file layout
 
 Each domain lives in `src/domains/<domain>/` with four flat files:
-
-| File | Contains | Must not contain |
-|---|---|---|
-| `model.rs` | rows, views, request/query DTOs | business logic |
-| `repo.rs` | pure SQL | business rules, `assert_*` |
-| `service.rs` | business rules, ownership, idempotence | Axum/HTTP types |
-| `handler.rs` | extraction, scope checks, serialization | SQL |
-
-`service` may depend on another domain's `service`, never on `http`. HTTP
-middleware and extractors live in `src/http/`; ingestion adapters in
-`src/ingest/`; cross-cutting helpers in `src/shared/`.
-
-Do not add a `Repository` trait (ADR-0006). `sqlx::test` covers DB testing.
+`model.rs`, `repo.rs`, `service.rs`, `handler.rs`. The full layer contract
+(what each file may contain, allowed dependencies, authorization gates) is
+in [`.ai/rules/domains.md`](.ai/rules/domains.md). Do not add a
+`Repository` trait (ADR-0006); `sqlx::test` covers DB testing.
 
 ## Data rules
 
@@ -65,11 +62,15 @@ Do not add a `Repository` trait (ADR-0006). `sqlx::test` covers DB testing.
 - Encrypt secrets (AES-256-GCM), hash searchable values (HMAC) (ADR-0009).
   Never add a clear-text secret column.
 
+Migration specifics are in [`.ai/rules/db.md`](.ai/rules/db.md).
+
 ## Workflow
 
 - Language: code (including comments) and docs are **English**; commits are
   **English**, imperative, following
-  [`docs/git-conventions.md`](docs/git-conventions.md).
+  [`.ai/rules/commits.md`](.ai/rules/commits.md).
+- Tests for behavior changes are written by an impartial subagent briefed on
+  the spec only (`.ai/rules/tests.md`).
 - User-facing error messages are centralized in `src/error.rs` (`messages`
   module). Never inline a literal message at the call site.
 - Before finishing any change, run and make pass:
@@ -80,7 +81,8 @@ Do not add a `Repository` trait (ADR-0006). `sqlx::test` covers DB testing.
   cargo test          # needs DATABASE_URL pointing to a Postgres
   ```
 
-- One logical change per commit. Never commit secrets (`.env`).
+- One logical change per commit. Never commit secrets (`.env`). Install the
+  formatting hook once per clone with `bash scripts/install-hooks.sh`.
 - Do **not** commit unless explicitly asked.
 - Keep docs in sync in the same change: `docs/api.md`, `docs/scopes.md`,
   `docs/schema.md`, and the ADRs when a decision is involved.

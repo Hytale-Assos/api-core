@@ -52,3 +52,5 @@ Each ADR follows a lightweight variant of the
 | [0013](0013-centralized-messages-and-logs.md) | Centralized user-facing messages and logs | Accepted |
 | [0014](0014-english-as-project-language.md) | English as the single project language | Accepted |
 | [0015](0015-shared-test-fixtures.md) | Shared test fixtures and helpers | Accepted |
+| [0016](0016-management-push-to-servers.md) | Pushing management commands to registered servers | Accepted |
+| [0017](0017-containerized-deployment.md) | Containerized deployment with Podman/Quadlet | Accepted |

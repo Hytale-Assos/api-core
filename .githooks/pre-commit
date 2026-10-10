@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Pre-commit hook: format staged Rust files and lint the crate, mirroring the
+# website project (Pint --dirty equivalent). Install with:
+#   bash scripts/install-hooks.sh
+set -euo pipefail
+
+staged() {
+    git diff --cached --name-only --diff-filter=ACMR | grep '\.rs$' || true
+}
+
+rs_files="$(staged)"
+
+if [ -n "$rs_files" ]; then
+    # Format the staged files, then restage them.
+    # shellcheck disable=SC2086
+    rustfmt --edition 2024 $rs_files
+    # shellcheck disable=SC2086
+    git add -- $rs_files
+
+    # Lint the whole crate (cached, fast on second run).
+    cargo clippy --all-targets --quiet -- -D warnings
+fi

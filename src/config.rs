@@ -22,6 +22,10 @@ pub struct Config {
     pub hmac_tolerance_secs: i64,
     pub cors_allowed_origins: Vec<String>,
     pub seed_admin: Option<SeedAdminConfig>,
+    pub queue_poll_secs: u64,
+    pub queue_batch_size: i64,
+    pub queue_max_attempts: u64,
+    pub queue_backoff_secs: u64,
 }
 
 impl Config {
@@ -57,6 +61,34 @@ impl Config {
             .filter(|s| !s.is_empty())
             .collect();
 
+        let queue_poll_secs = env::var("QUEUE_POLL_SECS")
+            .ok()
+            .map(|v| v.parse())
+            .transpose()
+            .context("QUEUE_POLL_SECS is invalid")?
+            .unwrap_or(5);
+
+        let queue_batch_size = env::var("QUEUE_BATCH_SIZE")
+            .ok()
+            .map(|v| v.parse())
+            .transpose()
+            .context("QUEUE_BATCH_SIZE is invalid")?
+            .unwrap_or(20);
+
+        let queue_max_attempts = env::var("QUEUE_MAX_ATTEMPTS")
+            .ok()
+            .map(|v| v.parse())
+            .transpose()
+            .context("QUEUE_MAX_ATTEMPTS is invalid")?
+            .unwrap_or(10);
+
+        let queue_backoff_secs = env::var("QUEUE_BACKOFF_SECS")
+            .ok()
+            .map(|v| v.parse())
+            .transpose()
+            .context("QUEUE_BACKOFF_SECS is invalid")?
+            .unwrap_or(2);
+
         Ok(Self {
             bind_addr,
             database_url,
@@ -65,6 +97,10 @@ impl Config {
             hmac_tolerance_secs,
             cors_allowed_origins,
             seed_admin,
+            queue_poll_secs,
+            queue_batch_size,
+            queue_max_attempts,
+            queue_backoff_secs,
         })
     }
 }

@@ -52,6 +52,10 @@ pub fn test_config() -> Config {
         hmac_tolerance_secs: 300,
         cors_allowed_origins: vec!["*".into()],
         seed_admin: None,
+        queue_poll_secs: 5,
+        queue_batch_size: 20,
+        queue_max_attempts: 10,
+        queue_backoff_secs: 2,
     }
 }
 

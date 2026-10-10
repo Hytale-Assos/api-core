@@ -5,9 +5,11 @@ use crate::shared::map_unique_violation;
 
 use super::model::WhitelistRow;
 
-/// Adds a whitelist entry. Idempotent: returns the active entry if it exists.
-pub async fn insert(
-    pool: &sqlx::PgPool,
+/// Adds a whitelist entry inside an existing transaction.
+///
+/// Idempotent: returns the active entry if it already exists.
+pub async fn insert_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     id: Uuid,
     hytale_server_id: Uuid,
     hytale_id: Uuid,
@@ -22,20 +24,34 @@ pub async fn insert(
     .bind(id)
     .bind(hytale_server_id)
     .bind(hytale_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(map_unique_violation)?;
 
     match inserted {
         Some(row) => Ok(row),
-        None => fetch_active(pool, hytale_server_id, hytale_id)
+        None => fetch_active_tx(tx, hytale_server_id, hytale_id)
             .await?
             .ok_or(AppError::NotFound),
     }
 }
 
-pub async fn fetch_active(
-    pool: &sqlx::PgPool,
+/// Fetches an active entry by id.
+pub async fn fetch_by_id(pool: &sqlx::PgPool, id: Uuid) -> AppResult<WhitelistRow> {
+    let row = sqlx::query_as::<_, WhitelistRow>(
+        "SELECT id, hytale_server_id, hytale_id, created_at, updated_at
+         FROM whitelists
+         WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AppError::NotFound)?;
+    Ok(row)
+}
+
+async fn fetch_active_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     hytale_server_id: Uuid,
     hytale_id: Uuid,
 ) -> AppResult<Option<WhitelistRow>> {
@@ -46,32 +62,9 @@ pub async fn fetch_active(
     )
     .bind(hytale_server_id)
     .bind(hytale_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut **tx)
     .await?;
     Ok(row)
-}
-
-/// Tells whether an entry belongs to a server of the given module.
-pub async fn is_owned_by(
-    pool: &sqlx::PgPool,
-    whitelist_id: Uuid,
-    module_id: Uuid,
-) -> AppResult<bool> {
-    let owned = sqlx::query_scalar::<_, bool>(
-        "SELECT EXISTS(
-             SELECT 1
-             FROM whitelists w
-             JOIN hytale_servers s ON s.id = w.hytale_server_id
-             WHERE w.id = $1 AND s.module_id = $2
-               AND w.deleted_at IS NULL AND s.deleted_at IS NULL
-         )",
-    )
-    .bind(whitelist_id)
-    .bind(module_id)
-    .fetch_one(pool)
-    .await?;
-
-    Ok(owned)
 }
 
 pub async fn list(
@@ -111,12 +104,15 @@ pub async fn list(
     Ok((rows, total))
 }
 
-pub async fn soft_delete(pool: &sqlx::PgPool, id: Uuid) -> AppResult<()> {
+pub async fn soft_delete_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    id: Uuid,
+) -> AppResult<()> {
     let result = sqlx::query(
         "UPDATE whitelists SET deleted_at = now() WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(id)
-    .execute(pool)
+    .execute(&mut **tx)
     .await?;
 
     if result.rows_affected() == 0 {

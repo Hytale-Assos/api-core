@@ -53,7 +53,9 @@ async fn main() -> Result<()> {
         config: Arc::new(config),
     };
 
-    let app = http::router::build(state);
+    let app = http::router::build(state.clone());
+
+    domains::queue::worker::spawn(state);
 
     let listener = TcpListener::bind(bind_addr)
         .await

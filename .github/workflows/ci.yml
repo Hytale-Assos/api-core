@@ -1,0 +1,54 @@
+name: ci
+
+on:
+    pull_request:
+        branches:
+            - develop
+    push:
+        branches:
+            - develop
+
+permissions:
+    contents: read
+
+env:
+    DATABASE_URL: postgres://api_core:api_core@postgres:5432/api_core
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+
+        # Toolchain pinned by digest (bump tag and digest together, same commit).
+        container:
+            image: rust:1.94-slim-bookworm@sha256:cf9dd0ec73e75f827fe59123fff9dc65af1a1c8363c3c31ee8d7f8ad0b6a5fb2
+
+        services:
+            postgres:
+                image: postgres:17-alpine@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+                env:
+                    POSTGRES_USER: api_core
+                    POSTGRES_PASSWORD: api_core
+                    POSTGRES_DB: api_core
+                options: >-
+                    --health-cmd "pg_isready -U api_core -d api_core"
+                    --health-interval 5s
+                    --health-timeout 5s
+                    --health-retries 10
+
+        steps:
+            - name: Checkout code
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+
+            - name: Install toolchain components
+              run: rustup component add rustfmt clippy
+
+            - name: Check formatting
+              run: cargo fmt --check
+
+            - name: Lint
+              run: cargo clippy --all-targets -- -D warnings
+
+            - name: Test
+              run: cargo test

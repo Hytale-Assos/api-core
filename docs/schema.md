@@ -91,9 +91,34 @@ Hytale server managed by a module.
 | `module_id` | UUID FK → `modules(id)` | no | |
 | `name` | TEXT | no | |
 | `url` | TEXT | no | |
+|  `agent_url` | TEXT | yes | agent control-plane base URL (ADR-0016) |
+|  `agent_token` | TEXT | yes | AES-256-GCM encrypted agent token (ADR-0009) |
+|  `agent_registered_at` | TIMESTAMPTZ | yes | last agent registration |
 | `deleted_at` | TIMESTAMPTZ | yes | |
 | `created_at` | TIMESTAMPTZ | no | default `now()` |
 | `updated_at` | TIMESTAMPTZ | no | default `now()` |
+
+### `whitelist_queue`
+Pending management commands delivered to registered servers (ADR-0016). It is a
+delivery **queue**, distinct from `whitelists` (which holds the desired state):
+a command must survive the removal of the whitelist entry it refers to.
+
+| Column | Type | Null | Note |
+|---|---|---|---|
+| `id` | UUID PK | no | v7 |
+| `hytale_server_id` | UUID FK → `hytale_servers(id)` | no | |
+| `hytale_id` | UUID | no | |
+| `action` | TEXT | no | `add` or `remove` |
+| `status` | TEXT | no | `pending`, `sent`, `failed` |
+| `attempts` | INTEGER | no | default 0 |
+| `last_error` | TEXT | yes | last delivery error |
+| `next_attempt_at` | TIMESTAMPTZ | no | backoff schedule |
+| `created_at` / `updated_at` | TIMESTAMPTZ | no | |
+
+> `whitelist_queue` has no FK to `whitelists` on purpose: a `remove` command
+> must outlive the soft-deleted entry. Partial unique index on
+> `(hytale_server_id, hytale_id, action)` where `status = 'pending'` keeps
+> repeated toggles from piling up duplicates.
 
 ### `player_sessions`
 Player connection session to a server.

@@ -211,6 +211,31 @@ Scope: `hytale_servers:read`. Global read.
 
 - **Output 200**: `HytaleServerView`. **Errors**: 403, 404.
 
+### PUT /api/v1/servers/{id}/agent
+
+Registers (or replaces) the server's **agent** endpoint: the control plane the
+core uses to push management commands (ADR-0016). Scope:
+`hytale_servers:write`. Ownership required (except admin).
+
+- **Input**: `{ "url": "http://127.0.0.1:8080", "token": "<agent bearer token>" }`.
+  The token is stored AES-256-GCM encrypted and never returned.
+- **Output 200**: `{ "registered": true, "url": "...", "registered_at": "..." }`.
+- **Errors**: 400, 403, 404.
+
+### GET /api/v1/servers/{id}/agent
+
+Agent status of a server. Scope: `hytale_servers:read`.
+
+- **Output 200**: `{ "registered": false, "url": null, "registered_at": null }`
+  or the registered endpoint. **Never exposes the token.** **Errors**: 403, 404.
+
+### DELETE /api/v1/servers/{id}/agent
+
+Clears the agent registration. Scope: `hytale_servers:write`. Ownership required
+(except admin).
+
+- **Output 204** (empty). **Errors**: 403, 404.
+
 ### DELETE /api/v1/servers/{id}
 
 Soft delete (`deleted_at`). Scope: `hytale_servers:write`. Ownership required
@@ -265,20 +290,26 @@ A player's whitelist, optionally filtered by server. Scope: `whitelist:read`.
 
 ### POST /api/v1/whitelists
 
-Adds an entry. Scope: `whitelist:write`. The server must belong to the module
-(except admin).
+Adds an entry. Scope: `whitelist:write`. **Self-service** (ADR-0016): any module
+with the scope may whitelist a player on any existing server, without ownership.
+The server must exist.
 
 - **Input**: `{ "hytale_server_id": "UUID", "hytale_id": "UUID" }`.
 - **Output 201**: `WhitelistView`. Idempotent.
-- **Errors**: 401, 403 (missing scope or server not owned).
+- **Errors**: 401, 403 (missing scope), 404 (server not found).
+
+A `whitelist_queue` command is enqueued so the owning server's management
+plugin grants native join access (ADR-0016).
 
 ### DELETE /api/v1/whitelists/{id}
 
-Soft delete. Scope: `whitelist:write`. The entry must belong to a server of the
-module (except admin).
+Soft delete. Scope: `whitelist:write`. Self-service (ADR-0016): no ownership
+check.
 
 - **Input**: `id` (UUID, path).
 - **Output 204** (empty). **Errors**: 401, 403, 404.
+
+A `whitelist_queue` command is enqueued so the owning server revokes access.
 
 ---
 

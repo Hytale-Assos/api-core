@@ -1,4 +1,5 @@
 /target
+/.idea
 
 # Secrets locaux et fichiers de travail
 .env

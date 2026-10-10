@@ -24,7 +24,7 @@ Everything committed to the repository is written in **English**:
 - configuration examples (`.env.example`) and commit/PR conventions.
 
 Commit messages are English and imperative (see
-[`docs/git-conventions.md`](../git-conventions.md)).
+[`.ai/rules/commits.md`](../../.ai/rules/commits.md)).
 
 The only tolerated non-English content is the local `.env` file, which is never
 committed.

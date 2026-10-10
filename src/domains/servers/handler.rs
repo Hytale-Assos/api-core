@@ -10,8 +10,9 @@ use crate::shared::pagination::{Page, normalize};
 use crate::shared::scopes;
 use crate::state::AppState;
 
-use super::model::{CreateServerRequest, HytaleServerView, ServerQuery};
+use super::model::{CreateServerRequest, HytaleServerView, RegisterAgentRequest, ServerQuery};
 use super::service;
+use crate::shared::logs;
 
 /// `POST /api/v1/servers` - registers a Hytale server.
 ///
@@ -61,6 +62,74 @@ pub async fn get_one(
 
     let server: HytaleServerView = service::get(&state.db, id).await?;
     Ok(Json(server))
+}
+
+/// `PUT /api/v1/servers/{id}/agent` - registers the server's agent endpoint
+/// (ADR-0016).
+///
+/// Required scope: `hytale_servers:write`. Ownership required (except admin).
+pub async fn register_agent(
+    State(state): State<AppState>,
+    principal: Principal,
+    Path(id): Path<Uuid>,
+    Json(body): Json<RegisterAgentRequest>,
+) -> AppResult<impl IntoResponse> {
+    principal.require(scopes::HYTALE_SERVERS_WRITE)?;
+
+    let agent = service::register_agent(
+        &state.db,
+        &state.crypto,
+        &principal,
+        id,
+        &body.url,
+        &body.token,
+    )
+    .await?;
+
+    tracing::info!(
+        server_id = %id,
+        module = %principal.name,
+        "{}",
+        logs::SERVER_AGENT_REGISTERED
+    );
+
+    Ok((StatusCode::OK, Json(agent)))
+}
+
+/// `GET /api/v1/servers/{id}/agent` - agent status (never exposes the token).
+///
+/// Required scope: `hytale_servers:read`.
+pub async fn get_agent(
+    State(state): State<AppState>,
+    principal: Principal,
+    Path(id): Path<Uuid>,
+) -> AppResult<impl IntoResponse> {
+    principal.require(scopes::HYTALE_SERVERS_READ)?;
+
+    let agent = service::get_agent(&state.db, id).await?;
+    Ok(Json(agent))
+}
+
+/// `DELETE /api/v1/servers/{id}/agent` - clears the agent registration.
+///
+/// Required scope: `hytale_servers:write`. Ownership required (except admin).
+pub async fn clear_agent(
+    State(state): State<AppState>,
+    principal: Principal,
+    Path(id): Path<Uuid>,
+) -> AppResult<impl IntoResponse> {
+    principal.require(scopes::HYTALE_SERVERS_WRITE)?;
+
+    service::clear_agent(&state.db, &principal, id).await?;
+
+    tracing::info!(
+        server_id = %id,
+        module = %principal.name,
+        "{}",
+        logs::SERVER_AGENT_CLEARED
+    );
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// `DELETE /api/v1/servers/{id}` - soft delete.

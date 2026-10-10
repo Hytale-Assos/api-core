@@ -44,6 +44,16 @@ pub struct CreateServerRequest {
     pub url: String,
 }
 
+/// Agent endpoint a server registers with the core (ADR-0016).
+///
+/// `url` is the agent's control-plane base URL, `token` its bearer token. The
+/// token is encrypted at rest (ADR-0009).
+#[derive(Debug, Deserialize)]
+pub struct RegisterAgentRequest {
+    pub url: String,
+    pub token: String,
+}
+
 /// Pagination parameters for servers.
 #[derive(Debug, Deserialize)]
 pub struct ServerQuery {
