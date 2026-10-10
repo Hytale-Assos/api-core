@@ -10,6 +10,7 @@ docs
 container
 scripts
 src/tests
+tests
 AGENTS.md
 README.md
 .env
