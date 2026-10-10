@@ -13,6 +13,15 @@ pub const ADMIN_SEED_FAILED: &str = "admin seed failed";
 // Modules
 pub const MODULE_REGISTERED: &str = "module registered";
 
+// Server agent registration / command queue
+pub const SERVER_AGENT_REGISTERED: &str = "server agent registered";
+pub const SERVER_AGENT_CLEARED: &str = "server agent cleared";
+pub const QUEUE_BATCH_FAILED: &str = "whitelist queue batch delivery failed";
+pub const QUEUE_DELIVERED: &str = "whitelist command delivered";
+pub const QUEUE_RESCHEDULED: &str = "whitelist command rescheduled";
+pub const QUEUE_FAILED: &str = "whitelist command failed permanently";
+pub const QUEUE_MARK_FAILED: &str = "whitelist command state update failed";
+
 // Whitelist
 pub const WHITELIST_ENTRY_ADDED: &str = "whitelist entry added";
 pub const WHITELIST_ENTRY_DELETED: &str = "whitelist entry deleted";

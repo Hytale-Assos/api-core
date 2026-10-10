@@ -233,30 +233,44 @@ async fn all_modules_can_list_all_servers(pool: PgPool) {
 }
 
 #[sqlx::test]
-async fn module_cannot_write_foreign_server(pool: PgPool) {
+async fn whitelist_is_self_service_for_foreign_servers(pool: PgPool) {
+    // ADR-0016: any module with `whitelist:write` may whitelist on a server it
+    // does not own (member self-service).
     let owner = register_module(&pool, fixtures::OWNER, &[scopes::HYTALE_SERVERS_WRITE]).await;
-    let intruder = register_module(
-        &pool,
-        fixtures::INTRUDER,
-        &[scopes::HYTALE_SERVERS_WRITE, scopes::WHITELIST_WRITE],
-    )
-    .await;
+    let member = register_module(&pool, fixtures::INTRUDER, &[scopes::WHITELIST_WRITE]).await;
 
     let server_id = create_server(&pool, &owner).await;
 
-    // The intruder tries to whitelist on a server it does not own.
     let attempt = signed_request(
         "POST",
         "/api/v1/whitelists",
-        &intruder.api_key,
-        &intruder.hmac_secret,
+        &member.api_key,
+        &member.hmac_secret,
         Some(serde_json::json!({
             "hytale_server_id": server_id,
             "hytale_id": Uuid::now_v7(),
         })),
     );
     let (status, _) = send(router_for(&pool), attempt).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::CREATED);
+}
+
+#[sqlx::test]
+async fn whitelist_on_missing_server_is_not_found(pool: PgPool) {
+    let member = register_module(&pool, fixtures::INTRUDER, &[scopes::WHITELIST_WRITE]).await;
+
+    let attempt = signed_request(
+        "POST",
+        "/api/v1/whitelists",
+        &member.api_key,
+        &member.hmac_secret,
+        Some(serde_json::json!({
+            "hytale_server_id": Uuid::now_v7(),
+            "hytale_id": Uuid::now_v7(),
+        })),
+    );
+    let (status, _) = send(router_for(&pool), attempt).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
 }
 
 #[sqlx::test]

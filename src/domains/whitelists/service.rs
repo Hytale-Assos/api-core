@@ -1,26 +1,48 @@
 use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::shared::identity::Principal;
 
 use super::model::{CreateWhitelistRequest, WhitelistView};
 use super::repo;
+use crate::domains::queue::repo as queue_repo;
+use crate::domains::queue::service as queue_service;
 use crate::domains::servers::service as servers_service;
 
-/// Adds a whitelist entry after checking server ownership.
+/// Adds a whitelist entry.
+///
+/// The whitelist is **self-service** (ADR-0016): any module holding
+/// `whitelist:write` may add an entry for any existing server, so a member can
+/// whitelist themselves on a server they do not own. The server must exist
+/// (referential integrity), which is the only check performed here.
+///
+/// A `whitelist_queue` command is enqueued in the same transaction so the
+/// owning server can be told to grant join access.
 pub async fn create(
     pool: &sqlx::PgPool,
-    principal: &Principal,
+    _principal: &Principal,
     request: CreateWhitelistRequest,
 ) -> AppResult<WhitelistView> {
-    servers_service::assert_owned(pool, principal, request.hytale_server_id).await?;
-    let row = repo::insert(
-        pool,
+    // Fails with `NotFound` when the server does not exist (or is soft-deleted).
+    servers_service::get(pool, request.hytale_server_id).await?;
+
+    let mut tx = pool.begin().await?;
+    let row = repo::insert_tx(
+        &mut tx,
         Uuid::now_v7(),
         request.hytale_server_id,
         request.hytale_id,
     )
     .await?;
+    queue_service::enqueue(
+        &mut tx,
+        queue_repo::WhitelistAction::Add,
+        request.hytale_server_id,
+        request.hytale_id,
+    )
+    .await?;
+    tx.commit().await?;
+
     Ok(WhitelistView::from(row))
 }
 
@@ -36,27 +58,32 @@ pub async fn list(
     Ok((rows.into_iter().map(WhitelistView::from).collect(), total))
 }
 
-/// Deletes an entry if it belongs to a server of the principal (or admin).
-pub async fn delete(pool: &sqlx::PgPool, principal: &Principal, id: Uuid) -> AppResult<()> {
-    assert_owned(pool, principal, id).await?;
-    repo::soft_delete(pool, id).await
-}
+/// Deletes an entry.
+///
+/// Self-service (ADR-0016): any module holding `whitelist:write` may remove an
+/// entry, without ownership. A `whitelist_queue` command is enqueued in the
+/// same transaction so the owning server can be told to revoke join access.
+pub async fn delete(pool: &sqlx::PgPool, _principal: &Principal, id: Uuid) -> AppResult<()> {
+    let row = repo::fetch_by_id(pool, id).await?;
 
-/// Asserts an entry is within the principal's scope.
-pub async fn assert_owned(pool: &sqlx::PgPool, principal: &Principal, id: Uuid) -> AppResult<()> {
-    if principal.is_admin() {
-        return Ok(());
-    }
-    if repo::is_owned_by(pool, id, principal.id).await? {
-        Ok(())
-    } else {
-        Err(AppError::Forbidden)
-    }
+    let mut tx = pool.begin().await?;
+    repo::soft_delete_tx(&mut tx, id).await?;
+    queue_service::enqueue(
+        &mut tx,
+        queue_repo::WhitelistAction::Remove,
+        row.hytale_server_id,
+        row.hytale_id,
+    )
+    .await?;
+    tx.commit().await?;
+
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::AppError;
     use crate::shared::scopes;
     use crate::testutil::fixtures;
     use crate::testutil::{seed_principal, seed_server};
@@ -105,19 +132,25 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn foreign_module_is_forbidden(pool: sqlx::PgPool) {
+    async fn another_module_can_whitelist_on_foreign_server(pool: sqlx::PgPool) {
+        // Self-service (ADR-0016): a module without ownership may whitelist.
         let owner = whitelist_principal(&pool, fixtures::OWNER, false).await;
         let other = whitelist_principal(&pool, fixtures::OTHER, false).await;
         let server = seed_server(&pool, &owner).await;
-        let entry = create(&pool, &owner, request(server.id, Uuid::now_v7()))
+
+        let entry = create(&pool, &other, request(server.id, Uuid::now_v7()))
             .await
             .unwrap();
+        assert!(delete(&pool, &other, entry.id).await.is_ok());
+    }
 
-        assert!(assert_owned(&pool, &owner, entry.id).await.is_ok());
-        assert!(matches!(
-            assert_owned(&pool, &other, entry.id).await.unwrap_err(),
-            AppError::Forbidden
-        ));
+    #[sqlx::test]
+    async fn creating_on_missing_server_is_not_found(pool: sqlx::PgPool) {
+        let principal = whitelist_principal(&pool, fixtures::MODULE, false).await;
+        let err = create(&pool, &principal, request(Uuid::now_v7(), Uuid::now_v7()))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, AppError::NotFound));
     }
 
     #[sqlx::test]
@@ -128,14 +161,48 @@ mod tests {
     }
 
     #[sqlx::test]
-    async fn admin_can_delete_foreign_entry(pool: sqlx::PgPool) {
-        let owner = whitelist_principal(&pool, fixtures::OWNER, false).await;
-        let admin = whitelist_principal(&pool, fixtures::ADMIN, true).await;
-        let server = seed_server(&pool, &owner).await;
-        let entry = create(&pool, &owner, request(server.id, Uuid::now_v7()))
+    async fn create_enqueues_a_queue_add_command(pool: sqlx::PgPool) {
+        let principal = whitelist_principal(&pool, fixtures::MODULE, false).await;
+        let server = seed_server(&pool, &principal).await;
+        let player = Uuid::now_v7();
+
+        create(&pool, &principal, request(server.id, player))
             .await
             .unwrap();
 
-        assert!(delete(&pool, &admin, entry.id).await.is_ok());
+        let (action, count): (String, i64) = sqlx::query_as(
+            "SELECT action, COUNT(*) FROM whitelist_queue
+             WHERE status = 'pending' AND hytale_id = $1 GROUP BY action",
+        )
+        .bind(player)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(action, "add");
+        assert_eq!(count, 1);
+    }
+
+    #[sqlx::test]
+    async fn delete_enqueues_a_queue_remove_command(pool: sqlx::PgPool) {
+        let principal = whitelist_principal(&pool, fixtures::MODULE, false).await;
+        let server = seed_server(&pool, &principal).await;
+        let player = Uuid::now_v7();
+
+        let entry = create(&pool, &principal, request(server.id, player))
+            .await
+            .unwrap();
+        delete(&pool, &principal, entry.id).await.unwrap();
+
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM whitelist_queue
+             WHERE status = 'pending' AND hytale_id = $1 AND action = 'remove'",
+        )
+        .bind(player)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+        assert_eq!(count, 1);
     }
 }

@@ -1,4 +1,4 @@
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, post, put};
 use axum::{Router, middleware};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -35,6 +35,12 @@ pub fn build(state: AppState) -> Router {
         .route(
             "/api/v1/servers/{id}",
             get(servers::handler::get_one).delete(servers::handler::delete),
+        )
+        .route(
+            "/api/v1/servers/{id}/agent",
+            put(servers::handler::register_agent)
+                .get(servers::handler::get_agent)
+                .delete(servers::handler::clear_agent),
         );
 
     // Player sessions (per-module reads, plus player-centric views).

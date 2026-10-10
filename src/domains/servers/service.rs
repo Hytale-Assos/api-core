@@ -3,6 +3,10 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult, messages};
 use crate::shared::identity::Principal;
 
+use crate::crypto::Crypto;
+use crate::domains::queue::model::AgentView;
+use crate::domains::queue::repo as queue_repo;
+
 use super::model::{CreateServerRequest, HytaleServerView};
 use super::repo;
 
@@ -68,6 +72,65 @@ pub async fn assert_owned(
     }
 
     if repo::is_owned_by(pool, server_id, principal.id).await? {
+        Ok(())
+    } else {
+        Err(AppError::Forbidden)
+    }
+}
+
+/// Registers (or replaces) a server's agent endpoint.
+///
+/// Ownership is required (the owning module or `admin`): only the module that
+/// owns a server may tell the core how to reach it. The token is encrypted
+/// before storage (ADR-0009).
+pub async fn register_agent(
+    pool: &sqlx::PgPool,
+    crypto: &Crypto,
+    principal: &Principal,
+    server_id: Uuid,
+    url: &str,
+    token: &str,
+) -> AppResult<AgentView> {
+    assert_server_owned(pool, principal, server_id).await?;
+
+    if url.trim().is_empty() || token.trim().is_empty() {
+        return Err(AppError::BadRequest(
+            messages::SERVER_NAME_AND_URL_REQUIRED.into(),
+        ));
+    }
+
+    let encrypted = crypto.encrypt_str(token.trim())?;
+    queue_repo::set_agent(pool, server_id, url.trim(), &encrypted).await?;
+    get_agent(pool, server_id).await
+}
+
+/// Clears a server's agent registration (ownership or admin required).
+pub async fn clear_agent(
+    pool: &sqlx::PgPool,
+    principal: &Principal,
+    server_id: Uuid,
+) -> AppResult<AgentView> {
+    assert_server_owned(pool, principal, server_id).await?;
+    queue_repo::clear_agent(pool, server_id).await?;
+    get_agent(pool, server_id).await
+}
+
+/// Returns the public agent status of a server.
+pub async fn get_agent(pool: &sqlx::PgPool, server_id: Uuid) -> AppResult<AgentView> {
+    let agent = queue_repo::fetch_agent(pool, server_id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(AgentView::from(agent))
+}
+
+/// Asserts the principal owns the server (or is admin).
+async fn assert_server_owned(
+    pool: &sqlx::PgPool,
+    principal: &Principal,
+    server_id: Uuid,
+) -> AppResult<()> {
+    let row = repo::fetch_by_id(pool, server_id).await?;
+    if principal.is_admin() || row.module_id == principal.id {
         Ok(())
     } else {
         Err(AppError::Forbidden)
@@ -172,5 +235,62 @@ mod tests {
         let admin = principal(&pool, fixtures::ADMIN, true).await;
         let err = delete(&pool, &admin, Uuid::now_v7()).await.unwrap_err();
         assert!(matches!(err, AppError::NotFound));
+    }
+
+    #[sqlx::test]
+    async fn agent_link_status_and_unlink(pool: sqlx::PgPool) {
+        let owner = principal(&pool, fixtures::OWNER, false).await;
+        let server = seed_server(&pool, &owner).await;
+        let crypto = crate::testutil::test_crypto();
+
+        // Unlinked by default.
+        let view = get_agent(&pool, server.id).await.unwrap();
+        assert!(!view.registered);
+        assert!(view.url.is_none());
+
+        let linked = register_agent(
+            &pool,
+            &crypto,
+            &owner,
+            server.id,
+            "http://127.0.0.1:8080",
+            "secret-token",
+        )
+        .await
+        .unwrap();
+        assert!(linked.registered);
+        assert_eq!(linked.url.as_deref(), Some("http://127.0.0.1:8080"));
+
+        // The token is stored encrypted, never returned.
+        let stored: String =
+            sqlx::query_scalar("SELECT agent_token FROM hytale_servers WHERE id = $1")
+                .bind(server.id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_ne!(stored, "secret-token");
+        assert_eq!(crypto.decrypt_str(&stored).unwrap(), "secret-token");
+
+        let cleared = clear_agent(&pool, &owner, server.id).await.unwrap();
+        assert!(!cleared.registered);
+    }
+
+    #[sqlx::test]
+    async fn another_module_cannot_link_agent(pool: sqlx::PgPool) {
+        let owner = principal(&pool, fixtures::OWNER, false).await;
+        let other = principal(&pool, fixtures::OTHER, false).await;
+        let server = seed_server(&pool, &owner).await;
+
+        let err = register_agent(
+            &pool,
+            &crate::testutil::test_crypto(),
+            &other,
+            server.id,
+            "http://127.0.0.1:8080",
+            "token",
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, AppError::Forbidden));
     }
 }
