@@ -29,6 +29,9 @@ HealthCmd=pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
 HealthInterval=5s
 HealthTimeout=3s
 HealthRetries=10
+# systemd considers the unit started only once the healthcheck passes, so
+# units that Require= it can rely on a database that accepts connections.
+Notify=healthy
 
 [Service]
 Restart=always
