@@ -64,9 +64,13 @@ runtime image has no `id` binary, `podman exec` is unavailable).
 - Peer networks linking exactly two containers are named
   `hytale-<container-a>-hytale-<container-b>`:
   `hytale-api-core-hytale-api-core-postgres.network` (app ↔ database),
-  `hytale-website-hytale-api-core.network` (website ↔ core). Never put all
-  services on one shared flat network: each dependency pair gets its own
-  network, and consumers reach the core at `http://hytale-api-core:3000`.
+  `hytale-website-hytale-api-core.network` (website ↔ core),
+  `hytale-server-vanilla-1-hytale-api-core.network` (game server ↔ core).
+  Never put all services on one shared flat network: each dependency pair
+  gets its own network, and consumers reach the core at
+  `http://hytale-api-core:3000`. Each game server gets its own pair
+  network (instance suffix `-1`, `-2`, ...): two game servers must never
+  share a network, or they could reach each other's management agent.
 - Volumes are named after their owning container:
   `hytale-api-core-postgres-data.volume`.
 - Secrets never live in the repo. Sensitive values are Podman secrets
