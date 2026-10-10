@@ -21,14 +21,16 @@
 #     Secrets are resolved at container creation: to rotate one, recreate
 #     it and restart the service.
 #
-# The core publishes no host port: consumers reach it over their peer
-# network at http://hytale-api-core:3000 (one network per dependency
-# pair, ADR-0017). The pair networks are declared in this repository
-# because every pair includes the core and the core unit must reference
-# them anyway; a consumer unit only adds the matching Network= line.
-# External callers that cannot join a peer network (e.g. the in-game
-# plugin ingesting session events) need a separate entry point, which
-# is not part of this deployment.
+# Containerized consumers reach the core over their peer network at
+# http://hytale-api-core:3000 (one network per dependency pair, ADR-0017).
+# The pair networks are declared in this repository because every pair
+# includes the core and the core unit must reference them anyway; a
+# consumer unit only adds the matching Network= line.
+#
+# Host port 42001 is published for non-containerized consumers only (the
+# in-game plugin ingesting session events): http://<host-lan-ip>:42001.
+# The endpoints stay gated by API key + HMAC (ADR-0002); restrict the
+# sources to the game servers' subnet in the host firewall.
 #
 # Hardening: NoNewPrivileges + DropCapability=ALL (the image is already
 # non-root, port > 1024) and a read-only root filesystem. The only writable
@@ -47,6 +49,7 @@ Image=ghcr.io/hytale-assos/api-core:latest
 ContainerName=hytale-api-core
 Network=hytale-api-core-hytale-api-core-postgres.network
 Network=hytale-website-hytale-api-core.network
+PublishPort=42001:3000
 NoNewPrivileges=true
 DropCapability=ALL
 ReadOnly=true
