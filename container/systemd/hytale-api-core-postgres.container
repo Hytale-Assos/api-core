@@ -1,0 +1,50 @@
+# PostgreSQL 18, reachable only from the hytale-api-core-hytale-api-core-postgres
+# network. The generated systemd unit is hytale-api-core-postgres.service.
+#
+# Image pinned by digest. Bump the tag and the digest together.
+# The database name and user are inline below; the password comes
+# from the hytale-api-core-postgres-password podman secret, provisioned
+# on the deployment host (rootless layout):
+#   podman secret create hytale-api-core-postgres-password \
+#     /home/hytale/hytale/secrets/api_core_postgres_password
+# If the secret is missing, systemd fails to start the unit. The
+# secret is resolved at container creation: to rotate it, recreate
+# the secret and restart the service.
+
+[Unit]
+Description=PostgreSQL for the Hytale API core
+# Give up after 5 restarts within a minute (crash loop) instead of
+# looping forever: the unit goes to "failed" and can be inspected.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Container]
+Image=docker.io/library/postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+ContainerName=hytale-api-core-postgres
+Network=hytale-api-core-hytale-api-core-postgres.network
+NoNewPrivileges=true
+User=postgres
+DropCapability=ALL
+ReadOnly=true
+Tmpfs=/tmp:rw,mode=1777
+Tmpfs=/var/run/postgresql:rw,mode=1777
+Secret=hytale-api-core-postgres-password,type=env,target=POSTGRES_PASSWORD
+Environment=POSTGRES_DB=api_core
+Environment=POSTGRES_USER=api_core
+Volume=hytale-api-core-postgres-data.volume:/var/lib/postgresql/data
+Memory=1G
+CPUs=2
+HealthCmd=pg_isready -q -d $$POSTGRES_DB -U $$POSTGRES_USER
+HealthInterval=5s
+HealthTimeout=3s
+HealthRetries=10
+# systemd considers the unit started only once the healthcheck passes, so
+# units that Require= it can rely on a database that accepts connections.
+Notify=healthy
+
+[Service]
+Restart=always
+RestartSec=3s
+
+[Install]
+WantedBy=default.target

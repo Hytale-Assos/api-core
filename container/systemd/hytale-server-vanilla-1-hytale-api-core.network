@@ -1,0 +1,22 @@
+# Peer network between hytale-server-vanilla-1 and hytale-api-core, so the
+# in-game plugin ingests session events at http://hytale-api-core:3000
+# without a published host port. The generated systemd unit is
+# hytale-server-vanilla-1-hytale-api-core.service.
+#
+# The unit lives here because the core owns its own deployment, but the
+# game server's quadlet (in the server's repository) must join it:
+#   Network=hytale-server-vanilla-1-hytale-api-core.network
+#   (the plugin then calls http://hytale-api-core:3000)
+# That edit belongs to the server's repository — track it there.
+#
+# One network per game server (ADR-0017): two servers must not reach
+# each other's management agent. Onboarding a second server means a new
+# <server>-hytale-api-core.network file plus one Network= line in the
+# core unit, with the instance suffix (-2, ...) distinguishing them.
+
+[Network]
+Label=app=hytale
+Label=layer=game-server
+
+[Install]
+WantedBy=default.target
